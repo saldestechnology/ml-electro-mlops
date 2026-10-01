@@ -150,6 +150,8 @@ class ElprisConfig(_Strict):
     max_retries: int = Field(ge=0)
     timeout_s: float = Field(gt=0)
     user_agent: str
+    # Days whose source data is known to be wrong; dropped on ingest, never repaired.
+    known_bad_days: dict[Zone, list[date]] = Field(default_factory=dict)
 
 
 class IngestConfig(_Strict):

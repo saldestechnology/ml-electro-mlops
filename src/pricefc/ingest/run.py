@@ -247,6 +247,7 @@ def ingest_prices(
                 tz=base.timezone,
                 requested_start=pull.requested_start,
                 requested_end=pull.requested_end,
+                excluded_days=pull.excluded_days,
             )
             snap = write_snapshot(
                 pull.data,

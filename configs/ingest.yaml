@@ -49,6 +49,12 @@ elprisetjustnu:
   timeout_s: 30
   # The default Python user agent is rejected with HTTP 403.
   user_agent: "pricefc/0.1 (day-ahead price forecasting research)"
+  # Source defect: one hour dropped mid-day and later hours shifted one slot earlier, so the
+  # values are wrong, not just incomplete. Verified against Energy-Charts on 2026-10-01 (see
+  # docs/decisions.md). Dropped on ingest, never repaired; replace from ENTSO-E when available.
+  known_bad_days:
+    SE2: ["2022-09-04", "2022-09-10", "2022-09-15", "2022-10-20"]
+    SE3: ["2021-11-04"]
 
 entsoe:
   min_interval_s: 0.5     # reported limit is 400 requests/minute

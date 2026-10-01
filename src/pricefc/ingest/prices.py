@@ -32,6 +32,7 @@ class PricePull:
     endpoint: str
     chunks: list[dict[str, Any]] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
+    excluded_days: frozenset[date] = frozenset()
 
 
 class PriceSource(Protocol):
@@ -126,10 +127,15 @@ class ElprisSource:
 
     def fetch_prices(self, zone: str, first: date, last: date, tz: str) -> PricePull:
         frames, missing, anomalies = [], [], []
+        known_bad = set(self.cfg.known_bad_days.get(zone, []))  # type: ignore[call-overload]
+        excluded: dict[str, int] = {}
         day = first
         while day <= last:
             entries = self._get_day(zone, day)
-            if entries:
+            if day in known_bad:
+                # Still fetched, so the manifest shows if the source has since been corrected.
+                excluded[day.isoformat()] = len(entries or [])
+            elif entries:
                 parsed = self.parse_day(entries)
                 anomalies.extend(self.time_end_anomalies(parsed))
                 frames.append(parsed)
@@ -160,12 +166,15 @@ class ElprisSource:
                     "missing_days": missing,
                     "days_requested": (last - first).days + 1,
                     "time_end_anomalies": anomalies,
+                    # day -> rows the source returned (non-zero: still published, still dropped)
+                    "excluded_known_bad_days": excluded,
                 }
             ],
             extra={
                 "attribution": "Electricity prices from elprisetjustnu.se",
                 "price_basis": "excl. VAT, surcharges and taxes",
             },
+            excluded_days=frozenset(date.fromisoformat(d) for d in excluded),
         )
 
 

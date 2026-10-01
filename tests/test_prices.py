@@ -148,3 +148,43 @@ def test_dst_time_end_anomaly_is_recorded_not_trusted() -> None:
     pull = src.fetch_prices("SE3", date(2025, 10, 26), date(2025, 10, 26), TZ)
     assert pull.chunks[0]["time_end_anomalies"] == ["2025-10-26T02:45:00+02:00"]
     assert (pull.data["resolution"] == PT15M).all()
+
+
+def test_known_bad_day_is_dropped_and_month_still_valid(tmp_path: Path) -> None:
+    cfg = CFG.model_copy(update={"known_bad_days": {"SE3": [date(2025, 10, 1)]}})
+    session = FakeSession()
+    src = ElprisSource(cfg, session=session, limiter=RateLimiter(0))  # type: ignore[arg-type]
+    pull = src.fetch_prices("SE3", date(2025, 9, 30), date(2025, 10, 1), TZ)
+    assert len(pull.data) == 24  # only 2025-09-30 kept
+    assert pull.chunks[0]["excluded_known_bad_days"] == {"2025-10-01": 96}
+    report = validate_series(
+        pull.data,
+        entsoe_spec("day_ahead_prices"),
+        tz=TZ,
+        requested_start=pull.requested_start,
+        requested_end=pull.requested_end,
+        excluded_days=pull.excluded_days,
+    )
+    assert report.passed, report.errors
+    assert report.stats["excluded_days"] == ["2025-10-01"]
+
+
+def test_gap_spanning_excluded_day_is_allowed_but_rows_on_it_are_not() -> None:
+    # Three local days around the 2024 spring DST change; the middle (23-hour) day is excluded.
+    start = pd.Timestamp("2024-03-30", tz=TZ).tz_convert("UTC")
+    end = pd.Timestamp("2024-04-02", tz=TZ).tz_convert("UTC")
+    ts = pd.date_range(start, end, freq="h", inclusive="left")
+    full = pd.DataFrame({"timestamp": ts, "price_eur_mwh": 10.0, "resolution": PT60M})
+    mid_start, mid_end = (
+        pd.Timestamp(d, tz=TZ).tz_convert("UTC") for d in ("2024-03-31", "2024-04-01")
+    )
+    gap = full[(full["timestamp"] < mid_start) | (full["timestamp"] >= mid_end)]
+    excl = frozenset({date(2024, 3, 31)})
+    spec = entsoe_spec("day_ahead_prices")
+    kwargs = {"tz": TZ, "requested_start": start, "requested_end": end}
+
+    assert not validate_series(gap, spec, **kwargs).passed  # type: ignore[arg-type]
+    ok = validate_series(gap, spec, excluded_days=excl, **kwargs)  # type: ignore[arg-type]
+    assert ok.passed, ok.errors
+    bad = validate_series(full, spec, excluded_days=excl, **kwargs)  # type: ignore[arg-type]
+    assert {"check": "excluded_day_has_rows", "day": "2024-03-31", "got": 23} in bad.errors

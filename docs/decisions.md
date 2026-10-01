@@ -80,3 +80,9 @@
 - **Residual risk**: a shift inside a day that keeps the correct row count would pass
   validation. The sample showed none, but full coverage needs the ENTSO-E comparison of every
   day. Do it when the token arrives, before the price series is used as the source of record.
+- **Known-bad days are excluded at ingest** (`elprisetjustnu.known_bad_days` in
+  `configs/ingest.yaml`). Those days are still fetched (the manifest records how many rows the
+  source returned, which shows if it gets corrected) but their rows are dropped, never
+  repaired. Validation requires them to be empty and allows the gap they leave. Their months
+  validate again, so daily runs exit cleanly and any *new* defect still fails. Datasets lack
+  these 5 days until ENTSO-E replaces them.

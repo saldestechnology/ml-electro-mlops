@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import asdict, dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -144,12 +144,33 @@ def build_schema(spec: SeriesSpec, df: pd.DataFrame) -> pa.DataFrameSchema:
     return pa.DataFrameSchema(columns, strict=False)
 
 
-def _gap_errors(ts: pd.Series, max_gap: pd.Timedelta) -> list[dict[str, Any]]:
+def _excluded_intervals(
+    excluded_days: frozenset[date], tz: str
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """UTC [start, end) spans of excluded local days, with adjacent days merged."""
+    spans: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    for day in sorted(excluded_days):
+        start, end = local_day_bounds_utc(day, tz)
+        if spans and spans[-1][1] == start:
+            spans[-1] = (spans[-1][0], end)
+        else:
+            spans.append((start, end))
+    return spans
+
+
+def _gap_errors(
+    ts: pd.Series, max_gap: pd.Timedelta, excluded: list[tuple[pd.Timestamp, pd.Timestamp]]
+) -> list[dict[str, Any]]:
+    """Gaps longer than `max_gap`, except gaps that exactly span excluded days."""
+    ts = ts.reset_index(drop=True)
     diffs = ts.diff()
-    bad = diffs[diffs > max_gap]
-    return [
-        {"check": "max_gap", "gap_end": ts[i].isoformat(), "gap": str(bad[i])} for i in bad.index
-    ]
+    errors = []
+    for i in diffs[diffs > max_gap].index:
+        prev, nxt = ts[i - 1], ts[i]
+        if any(s - max_gap <= prev < s and e <= nxt <= e + max_gap for s, e in excluded):
+            continue
+        errors.append({"check": "max_gap", "gap_end": nxt.isoformat(), "gap": str(diffs[i])})
+    return errors
 
 
 def _day_count_errors(
@@ -158,8 +179,12 @@ def _day_count_errors(
     tz: str,
     requested_start: pd.Timestamp,
     requested_end: pd.Timestamp,
+    excluded_days: frozenset[date],
 ) -> list[dict[str, Any]]:
-    """Every local day fully inside the requested range must have the expected row count."""
+    """Every local day fully inside the requested range must have the expected row count.
+
+    Excluded days (known source defects) must have no rows at all.
+    """
     errors: list[dict[str, Any]] = []
     local_days = df["timestamp"].dt.tz_convert(tz).dt.date
     counts = local_days.value_counts()
@@ -168,7 +193,11 @@ def _day_count_errors(
     day = first
     while day <= last:
         start, end = local_day_bounds_utc(day, tz)
-        if start >= requested_start and end <= requested_end:
+        if day in excluded_days:
+            got = int(counts.get(day, 0))
+            if got:
+                errors.append({"check": "excluded_day_has_rows", "day": str(day), "got": got})
+        elif start >= requested_start and end <= requested_end:
             mask = local_days == day
             if spec.step == "per_row":
                 res_values = df.loc[mask, "resolution"].dropna().unique().tolist()
@@ -206,7 +235,10 @@ def validate_series(
     tz: str,
     requested_start: pd.Timestamp,
     requested_end: pd.Timestamp,
+    excluded_days: frozenset[date] = frozenset(),
 ) -> ValidationReport:
+    """Validate a raw table. `excluded_days`: local days deliberately left empty (known
+    source defects); they must contain no rows, and gaps spanning them are not errors."""
     errors: list[dict[str, Any]] = []
     warns: list[dict[str, Any]] = []
     if "timestamp" not in df.columns:
@@ -225,13 +257,18 @@ def validate_series(
 
         structural_ok = not errors and len(df) > 0
         if structural_ok and spec.max_gap is not None:
-            errors.extend(_gap_errors(df["timestamp"], spec.max_gap))
+            excluded = _excluded_intervals(excluded_days, tz)
+            errors.extend(_gap_errors(df["timestamp"], spec.max_gap, excluded))
         if structural_ok and spec.check_day_counts and spec.step is not None:
-            errors.extend(_day_count_errors(df, spec, tz, requested_start, requested_end))
+            errors.extend(
+                _day_count_errors(df, spec, tz, requested_start, requested_end, excluded_days)
+            )
         if len(df) == 0:
             errors.append({"check": "non_empty"})
 
     stats: dict[str, Any] = {"rows": len(df)}
+    if excluded_days:
+        stats["excluded_days"] = sorted(str(d) for d in excluded_days)
     if "timestamp" in df.columns and len(df):
         stats["start"] = str(df["timestamp"].min())
         stats["end"] = str(df["timestamp"].max())
