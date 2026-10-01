@@ -24,3 +24,34 @@ weather:
       - {name: se4_kriegers_flak, lat: 55.05, lon: 12.95, role: neighbour_wind}
       - {name: dk_lolland, lat: 54.80, lon: 11.40, role: neighbour_wind}
       - {name: de_husum, lat: 54.48, lon: 9.05, role: neighbour_wind}
+
+# Dataset building (spec section 6). Every input has an availability rule; feature code only
+# sees values available at the forecast origin.
+dataset:
+  # Conservative: SDAC results usually appear ~12:45-13:00 CET; delays happen.
+  price_publication_time: "13:00"
+  price_lag_days: [1, 2, 7, 8]       # same local hour on D, D-1, D-6, D-7 for target day D+1
+  same_hour_mean_days: 7             # mean of the same local hour over D-6..D
+  rolling_windows_hours: [24, 168]   # trailing windows ending at the last published price
+  neighbour_price_zones:             # Swedish neighbours (prices from the same price source)
+    SE1: [SE2]
+    SE2: [SE1, SE3]
+    SE3: [SE2, SE4]
+    SE4: [SE3]
+  weather:
+    model: ecmwf_ifs
+    # Variables whose value at T is the total/mean over the preceding hour (T-1h, T];
+    # relabelled to the hour they cover, [T-1h, T), so they align with price hour T-1h.
+    preceding_hour_variables: [shortwave_radiation, precipitation, snowfall]
+    direction_variables: [wind_direction_100m]
+    # ECMWF data reaches Open-Meteo several hours after model initialisation (assumed 8h).
+    publication_delay_hours: 8
+    sources:
+      # Training history: stitched first hours of successive runs. Its true issue time is
+      # unknown; it is *treated* as a 2-day-lead forecast (optimistic, documented).
+      stitched: {endpoint: historical_forecast, lead_days: 2, column_suffix: ""}
+      # Backtests: genuine 2-day lead. Day-1 lead would leak for most D+1 hours.
+      true_lead: {endpoint: previous_runs, lead_days: 2, column_suffix: "_previous_day2"}
+  leakage_audit:
+    n_origins: 25
+    seed: 42

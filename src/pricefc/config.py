@@ -187,8 +187,46 @@ class WeatherFeatures(_Strict):
         return v
 
 
+class WeatherSourceConfig(_Strict):
+    endpoint: Literal["historical_forecast", "previous_runs"]
+    lead_days: int = Field(ge=1, le=7)
+    column_suffix: str
+
+
+class DatasetWeatherConfig(_Strict):
+    model: str
+    preceding_hour_variables: list[str]
+    direction_variables: list[str]
+    publication_delay_hours: float = Field(ge=0)
+    sources: dict[Literal["stitched", "true_lead"], WeatherSourceConfig]
+
+
+class LeakageAuditConfig(_Strict):
+    n_origins: int = Field(ge=1)
+    seed: int
+
+
+class DatasetConfig(_Strict):
+    price_publication_time: time
+    price_lag_days: list[int] = Field(min_length=1)
+    same_hour_mean_days: int = Field(ge=1)
+    rolling_windows_hours: list[int] = Field(min_length=1)
+    neighbour_price_zones: dict[Zone, list[Zone]]
+    weather: DatasetWeatherConfig
+    leakage_audit: LeakageAuditConfig
+
+    @field_validator("price_lag_days")
+    @classmethod
+    def _lags_known_at_origin(cls, v: list[int]) -> list[int]:
+        # Lag 0 would be the target day itself, which is never published before the origin.
+        if min(v) < 1:
+            raise ValueError("price lags must be >= 1 day")
+        return v
+
+
 class FeaturesConfig(_Strict):
     weather: WeatherFeatures
+    dataset: DatasetConfig
 
 
 def load_features_config(path: Path) -> FeaturesConfig:

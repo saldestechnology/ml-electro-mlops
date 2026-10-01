@@ -83,6 +83,14 @@ def test_load_latest_prefers_newest_pull_and_skips_invalid(tmp_path: Path) -> No
     assert df["value"].tolist() == [1.0, 2.0, 30.0, 40.0]
     assert len(used) == 2
 
+    # A later pull covering everything supersedes both; only it is reported as used.
+    write(
+        tmp_path, frame("2026-01-01 00:00", [7.0, 7.0, 7.0, 7.0]), datetime(2026, 9, 4, tzinfo=UTC)
+    )
+    df, used = load_latest(tmp_path, "test", "ds", "k1")
+    assert df["value"].tolist() == [7.0] * 4
+    assert [u.pulled_at.day for u in used] == [4]
+
     as_of, used = load_latest(tmp_path, "test", "ds", "k1", as_of=T0)
     assert as_of["value"].tolist() == [1.0, 2.0, 3.0]
-    assert len(list_snapshots(tmp_path, "test", "ds", "k1", only_valid=False)) == 3
+    assert len(list_snapshots(tmp_path, "test", "ds", "k1", only_valid=False)) == 4

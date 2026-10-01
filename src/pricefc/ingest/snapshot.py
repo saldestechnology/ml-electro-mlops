@@ -184,14 +184,16 @@ def load_latest(
     """Combine valid snapshots: per `key_cols` value, keep the row from the latest pull.
 
     `as_of` restricts to snapshots pulled at or before that time (vintage reconstruction).
-    Returns the combined table and the snapshots used (for lineage logging).
+    Returns the combined table and the snapshots that contributed at least one row (for
+    lineage logging); fully superseded snapshots are not reported.
     """
     snaps = list_snapshots(raw_root, source, dataset, key)
     if as_of is not None:
         snaps = [s for s in snaps if s.pulled_at <= as_of]
     if not snaps:
         return pd.DataFrame(), []
-    frames = [s.read().assign(_pulled_at=s.pulled_at) for s in snaps]
+    frames = [s.read().assign(_pulled_at=s.pulled_at, _snap=i) for i, s in enumerate(snaps)]
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values([*key_cols, "_pulled_at"]).drop_duplicates(list(key_cols), keep="last")
-    return df.drop(columns="_pulled_at").reset_index(drop=True), snaps
+    used = [snaps[i] for i in sorted(df["_snap"].unique())]
+    return df.drop(columns=["_pulled_at", "_snap"]).reset_index(drop=True), used

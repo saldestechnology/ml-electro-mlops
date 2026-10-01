@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pandera>=0.33.1",
     "entsoe-py>=0.8.1",
+    "holidays>=0.105",
 ]
 
 [project.optional-dependencies]

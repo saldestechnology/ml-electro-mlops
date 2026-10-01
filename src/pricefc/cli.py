@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from pricefc.config import BaseConfig, config_hash, load_config
 
 if TYPE_CHECKING:
+    from pricefc.datasets.loaders import WeatherKind
     from pricefc.ingest.run import IngestResult
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -183,6 +184,44 @@ def ingest_prices_cmd(
         typer.echo("nothing to do: all months already stored")
         return
     _finish(results, f"prices-{name}", zones, base, "none")
+
+
+FIRST_ORIGIN_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="First origin day.")
+LAST_ORIGIN_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="Last origin day.")
+dataset_app = typer.Typer(no_args_is_help=True, help="Build versioned datasets.")
+app.add_typer(dataset_app, name="dataset")
+
+
+@dataset_app.command("build")
+def dataset_build_cmd(
+    weather: str = typer.Argument(..., help="stitched (training) | true_lead (backtests)"),
+    zone: list[str] | None = ZONE_OPT,
+    start: datetime | None = FIRST_ORIGIN_OPT,
+    end: datetime | None = LAST_ORIGIN_OPT,
+    config: Path = CONFIG_OPT,
+    ingest_config: Path = INGEST_OPT,
+    features_config: Path = FEATURES_OPT,
+) -> None:
+    """Build, leakage-audit, store and log a dataset per zone."""
+    from pricefc.config import load_features_config, load_ingest_config
+    from pricefc.datasets.build import build_dataset
+
+    if weather not in ("stitched", "true_lead"):
+        raise typer.BadParameter("weather must be stitched or true_lead")
+    base = load_config(config)
+    feats = load_features_config(features_config)
+    ing = load_ingest_config(ingest_config)
+    for z in zone or list(base.zones):
+        stored, run_id = build_dataset(
+            base, feats, ing, z, cast("WeatherKind", weather), _date(start), _date(end)
+        )
+        m = stored.manifest
+        typer.echo(
+            f"{z}: {stored.path} rows={m['rows']} features={len(m['feature_columns'])} "
+            f"origins={m['origin_first']}..{m['origin_last']} "
+            f"leakage_audit=passed({len(m['leakage_audit']['origins_checked'])} origins) "
+            f"mlflow={run_id}"
+        )
 
 
 @app.command()
