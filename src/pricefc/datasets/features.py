@@ -75,12 +75,17 @@ def local_day_slice(view: pd.DataFrame, day: date, tz: str) -> pd.DataFrame:
 # --- calendar --------------------------------------------------------------------------------
 
 
+# Holiday names are localised from the system locale; the name matching below needs a fixed
+# language, or the calendar features would differ between machines.
+_LANG = "en_US"
+
+
 @cache
 def _sweden_days(year: int) -> tuple[frozenset[date], frozenset[date], frozenset[date]]:
     """(public, de facto, half days) for one year. Plain Sundays are excluded."""
-    public = Sweden(years=year, categories=("public",))
-    de_facto = Sweden(years=year, categories=("de_facto",))
-    every = Sweden(years=year, categories=Sweden.supported_categories)
+    public = Sweden(years=year, categories=("public",), language=_LANG)
+    de_facto = Sweden(years=year, categories=("de_facto",), language=_LANG)
+    every = Sweden(years=year, categories=Sweden.supported_categories, language=_LANG)
     pub = frozenset(d for d, n in public.items() if n != "Sunday")
     half = frozenset(d for d, n in every.items() if "(from 2pm)" in n)
     return pub, frozenset(de_facto.keys()), half

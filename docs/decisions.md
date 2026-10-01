@@ -117,3 +117,8 @@
   weather from the archive gap, none lack all).
 - **Not yet in datasets**: ENTSO-E fundamentals (load/wind/solar forecasts, flows, outages,
   hydro). They will be a second dataset version, so their value can be measured.
+- **Holiday names are locale-dependent** (found by CI): the `holidays` package localises names
+  from the system locale, and the calendar features match on names ("Sunday", "(from 2pm)").
+  Under a Swedish/C locale, every Sunday became a public holiday and half days vanished. Fixed
+  by pinning `language="en_US"`; a test runs the calendar under three locales. Datasets built
+  on 2026-10-01 were built under en_US and are unaffected (rebuilt SE3 digests identical).

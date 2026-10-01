@@ -177,3 +177,21 @@ def test_build_write_and_log(tmp_path: Path) -> None:
     assert run.data.tags["dataset_version"] == ds.version
     assert run.inputs.dataset_inputs[0].dataset.name == "se3-test"
     assert np.isclose(float(run.data.params["rows"]), len(df))
+
+
+@pytest.mark.parametrize("lang", ["C.UTF-8", "sv_SE.UTF-8", "en_US.UTF-8"])
+def test_calendar_does_not_depend_on_system_locale(lang: str) -> None:
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "from datetime import date; from tests.test_dataset import calendar_for as c; "
+        "print(int(c(date(2025, 9, 14))['cal_is_public_holiday'].iloc[0]), "
+        "int(c(date(2025, 4, 30))['cal_is_half_day'].iloc[0]))"
+    )
+    env = {**os.environ, "LANG": lang, "LC_ALL": lang}
+    out = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True
+    ).stdout.split()
+    assert out == ["0", "1"]
