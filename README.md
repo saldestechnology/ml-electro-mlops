@@ -14,6 +14,16 @@ make check             # lint, typecheck, tests
 make mlflow-ui         # http://localhost:5000
 ```
 
+## Datasets
+
+```bash
+uv run python -m pricefc dataset build stitched -z SE3    # training: full history
+uv run python -m pricefc dataset build true_lead -z SE3   # backtests: true day-2-lead weather
+```
+
+Each build runs a leakage audit (fails on any feature that uses data unavailable at the 09:00
+origin), writes `data/datasets/{zone}/hourly/{version}/` and logs to MLflow `datasets`.
+
 ## Ingestion
 
 ```bash

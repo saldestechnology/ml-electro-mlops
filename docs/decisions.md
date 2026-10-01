@@ -86,3 +86,34 @@
   repaired. Validation requires them to be empty and allows the gap they leave. Their months
   validate again, so daily runs exit cleanly and any *new* defect still fails. Datasets lack
   these 5 days until ENTSO-E replaces them.
+
+## 2026-10-01 — M2 datasets
+- **Rows**: one per (origin day D at 09:00 Europe/Stockholm, target hour of local D+1); 23/24/25
+  rows per origin. Target `y` = hourly mean price (15-minute MTUs averaged, D2).
+- **Availability rules** (every input declares one; features only see as-of views):
+  prices for delivery day X known from X-1 13:00 local (conservative vs ~12:45 CET);
+  weather value for T known from T - 48h + 8h publication delay.
+- **Weather lead changed to day 2** (supersedes the earlier "day-1 then day-2 fallback" note).
+  Open-Meteo defines previous_dayN as "predicted N x 24 hours before valid time"; with an 8h
+  publication delay, day-1 values would be available after the origin for most D+1 hours.
+  Day-2 is available for all of them. The Single Runs API could tighten this later.
+- **Stitched training weather is treated as a day-2 forecast** (its true issue time is
+  unknown). Measured on the 8,664 overlapping SE3 rows vs true day-2 lead: temperature
+  corr 0.996 (MAE 0.5 C), radiation 0.991, **100 m wind 0.939 (MAE 0.6 m/s)**. Expect models
+  to look better in training than in the true-lead backtest, mostly through wind.
+- **Leakage audit** runs on every build: seeded random origins + both ends + every origin with
+  a 23/25-hour target day; all data unavailable at the origin is perturbed and every feature
+  must be bit-identical; the perturbation must also change the target (non-vacuous). The build
+  fails otherwise. Plus a Hypothesis invariant test and injected-leak tests, mutation-checked.
+- **Holidays**: `holidays` package, Sweden, with Sundays removed from "public" and de facto
+  days (Midsummer, Christmas and New Year's Eve), half days ("from 2pm") and computed bridge
+  days as separate features.
+- **Versioning**: `data/datasets/{zone}/hourly/{YYYYMMDD}-{digest6}/` with a lineage manifest
+  (contributing raw snapshots with hashes and git SHAs, availability rules, audit report).
+  Timestamp columns are normalised to ns so the digest does not depend on pandas unit inference.
+- **Built 2026-10-01** (all leakage audits passed):
+  stitched SE1-SE4: origins 2021-11-08..2026-09-28 (~42.9k rows; SE2 -96 for excluded days);
+  true_lead SE1-SE4: origins 2025-10-03..2026-09-28 (8,664 rows; 7.5% of SE3 rows lack some
+  weather from the archive gap, none lack all).
+- **Not yet in datasets**: ENTSO-E fundamentals (load/wind/solar forecasts, flows, outages,
+  hydro). They will be a second dataset version, so their value can be measured.
