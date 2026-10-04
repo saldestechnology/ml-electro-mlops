@@ -277,6 +277,9 @@ def backtest_run_cmd(
             "pinball_hi",
             "ae_mean",
             "pinball_skill_vs_ref",
+            "pinball_diff_vs_ref",
+            "pinball_diff_lo",
+            "pinball_diff_hi",
             "pinball_dm_p",
         ]
         with pd.option_context("display.width", 200, "display.float_format", "{:.3f}".format):
@@ -313,6 +316,9 @@ def backtest_compare_cmd(
         "pinball_hi",
         "ae_mean",
         "pinball_skill_vs_ref",
+        "pinball_diff_vs_ref",
+        "pinball_diff_lo",
+        "pinball_diff_hi",
         "pinball_dm_p",
     ]
     with pd.option_context("display.width", 200, "display.float_format", "{:.3f}".format):

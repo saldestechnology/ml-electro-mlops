@@ -187,3 +187,30 @@
 - **Bugs found and fixed while running M4**: comparison keyed variants by base name (a variant
   overwrote its parent; regression test fails on the old code); MLflow logged base params for
   variants; '@'/'=' invalid in MLflow metric names; `compare_runs` set-pop in a generator.
+
+## 2026-10-04 — M4 LightGBM (SE1, SE2, SE4) and champion candidates
+- **Tuning** (same setup as SE3, 40 trials each, ~45 min per zone): the other zones prefer
+  small, heavily regularised trees (17-29 leaves, min_child 236-392, colsample 0.41-0.66,
+  reg_alpha 1-2.7) versus 252 leaves for SE3. n_estimators: SE1 290, SE2 340, SE4 760.
+  Fold pinball (q10/q50/q90): SE1 3.29, SE2 3.23, SE4 6.97.
+- **Backtest, 365 true-lead origins per zone** (mean pinball EUR/MWh; diff vs MSTL with 95%
+  block-bootstrap CI; coverage 80/90%; bias = mean(q50 - y)):
+
+  | zone | tuned+recal(28d) | tuned | MSTL | naive 7d | diff vs MSTL [CI] | DM p | cov 80/90 | bias |
+  |---|---|---|---|---|---|---|---|---|
+  | SE1 | 5.053 | 5.060 | 5.950 | 11.117 | -0.90 [-1.26, -0.54] | 2e-7 | 76.9/88.3 | -3.4 |
+  | SE2 | 4.788 | 4.790 | 6.216 | 11.479 | -1.43 [-1.75, -1.11] | 7e-15 | 78.4/88.8 | -4.0 |
+  | SE3 | 5.727 | 5.753 | 6.530 | 11.613 | -0.78 [-1.15, -0.40] | <1e-3 | 77.6/87.9 | -2.1 |
+  | SE4 | 6.920 | 7.011 | 8.351 | 13.691 | -1.43 [-1.89, -1.00] | 8e-12 | 77.7/88.7 | -1.7 |
+
+- **Recalibration** barely moves pinball in SE1/SE2 (<0.01) but fixes coverage everywhere
+  (raw: 68-72% / 82-84%), so the recalibrated variant is the candidate in all zones.
+- **Remaining weakness**: q50 still under-forecasts by 2-4 EUR/MWh on average (MSTL ~0). The
+  28-day offset is a quantile of residuals, so it does not target mean bias, and the right
+  tail of prices (spikes) pulls the mean above the median. Not a promotion blocker under the
+  pinball criterion; worth revisiting with M8 ensembling.
+- **Champion candidates (M4)**: `lightgbm_tuned_{zone}@calibration=28` in every zone. All
+  criteria met: better mean pinball than the incumbent best (MSTL), paired CI excludes zero,
+  DM significant, coverage within 3 points of nominal, leakage audits clean. Formal
+  registration and the champion alias happen in M6 (requires the pyfunc wrapper).
+- `backtest run` / `backtest compare` now print the paired difference CI columns.
