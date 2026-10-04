@@ -224,6 +224,61 @@ def dataset_build_cmd(
         )
 
 
+backtest_app = typer.Typer(no_args_is_help=True, help="Rolling-origin backtests.")
+app.add_typer(backtest_app, name="backtest")
+BACKTEST_OPT = typer.Option(Path("configs/backtest.yaml"), "--backtest-config")
+MODELS_DIR_OPT = typer.Option(Path("configs/models"), "--models-dir")
+MODEL_OPT = typer.Option(None, "--model", "-m", help="Repeatable. Default: backtest config.")
+DEV_OPT = typer.Option(False, "--dev", help="Every n-th origin only (fast).")
+VERSION_OPT = typer.Option(None, help="Dataset version (default: latest).")
+
+
+@backtest_app.command("run")
+def backtest_run_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    model: list[str] | None = MODEL_OPT,
+    dev: bool = DEV_OPT,
+    train_version: str | None = VERSION_OPT,
+    eval_version: str | None = VERSION_OPT,
+    config: Path = CONFIG_OPT,
+    backtest_config: Path = BACKTEST_OPT,
+    models_dir: Path = MODELS_DIR_OPT,
+) -> None:
+    """Backtest models on the true-lead dataset and compare them (bootstrap + DM)."""
+    import pandas as pd
+
+    from pricefc.backtest.run import run_zone
+    from pricefc.config import load_backtest_config, load_model_params
+
+    base = load_config(config)
+    cfg = load_backtest_config(backtest_config)
+    params = load_model_params(models_dir)
+    for z in zone or list(base.zones):
+        _, table = run_zone(
+            base,
+            cfg,
+            params,
+            z,
+            models=model,
+            dev=dev,
+            train_version=train_version,
+            eval_version=eval_version,
+        )
+        cols = [
+            "model",
+            "days",
+            "pinball_mean",
+            "pinball_lo",
+            "pinball_hi",
+            "ae_mean",
+            "pinball_skill_vs_ref",
+            "pinball_dm_p",
+        ]
+        with pd.option_context("display.width", 200, "display.float_format", "{:.3f}".format):
+            typer.echo(f"\n{z} ({'dev' if dev else 'full'}), reference={cfg.reference_model}")
+            typer.echo(table[[c for c in cols if c in table.columns]].to_string(index=False))
+
+
 @app.command()
 def snapshots(config: Path = CONFIG_OPT) -> None:
     """List raw snapshots with row counts and validation status."""

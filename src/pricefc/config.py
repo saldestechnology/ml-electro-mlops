@@ -231,3 +231,50 @@ class FeaturesConfig(_Strict):
 
 def load_features_config(path: Path) -> FeaturesConfig:
     return FeaturesConfig.model_validate(load_yaml(path))
+
+
+# --- backtest --------------------------------------------------------------------------------
+
+
+class BootstrapConfig(_Strict):
+    n_resamples: int = Field(ge=100)
+    block_length: int = Field(ge=1)
+    level: float = Field(gt=0, lt=1)
+    seed: int
+
+
+class DMConfig(_Strict):
+    horizon: int = Field(ge=1)
+
+
+class BacktestConfig(_Strict):
+    eval_start: date | None = None
+    eval_end: date | None = None
+    dev_every_n_days: int = Field(ge=1)
+    train_start: date | None = None
+    reference_model: str
+    models: list[str] = Field(min_length=1)
+    bootstrap: BootstrapConfig
+    dm: DMConfig
+
+    @field_validator("dev_every_n_days")
+    @classmethod
+    def _not_weekly(cls, v: int) -> int:
+        if v % 7 == 0:
+            raise ValueError("dev_every_n_days must not be a multiple of 7 (one weekday only)")
+        return v
+
+
+def load_backtest_config(path: Path) -> BacktestConfig:
+    return BacktestConfig.model_validate(load_yaml(path))
+
+
+def load_model_params(models_dir: Path) -> dict[str, dict[str, Any]]:
+    """Merge every configs/models/*.yaml into {model_name: params}."""
+    params: dict[str, dict[str, Any]] = {}
+    for f in sorted(models_dir.glob("*.yaml")):
+        for name, p in load_yaml(f).items():
+            if name in params:
+                raise ValueError(f"model {name!r} defined twice")
+            params[name] = dict(p or {})
+    return params

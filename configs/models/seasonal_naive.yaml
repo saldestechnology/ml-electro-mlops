@@ -1,0 +1,6 @@
+# Point: same local hour `lag_days` before the target. Quantiles: empirical quantiles of the
+# method's own errors over the last `residual_days` of training data, per local hour.
+seasonal_naive_7d: {lag_days: 7, residual_days: 56, by_hour: true, refit: monthly}
+seasonal_naive_1d: {lag_days: 1, residual_days: 56, by_hour: true, refit: monthly}
+# Standard EPF naive: yesterday's same hour for Tue-Fri targets, last week's for Sat/Sun/Mon.
+naive_weekday: {lag_days: weekday, residual_days: 56, by_hour: true, refit: monthly}

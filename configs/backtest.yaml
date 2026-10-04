@@ -1,0 +1,17 @@
+# Backtest protocol (spec section 9).
+eval_start: null          # default: every origin in the true-lead dataset (~ the last 12 months)
+eval_end: null
+dev_every_n_days: 5       # --dev: every 5th origin. Never a multiple of 7: that samples a
+                          # single weekday and biases weekday-sensitive models.
+# Training rows used for fitting. null = all history (incl. the 2022-23 energy crisis);
+# e.g. "2023-07-01" excludes it. Compared explicitly once LightGBM exists (M4).
+train_start: null
+reference_model: seasonal_naive_7d   # skill scores and pairwise tests are against this
+models: [seasonal_naive_7d, seasonal_naive_1d, naive_weekday, mstl_ets]
+bootstrap:
+  n_resamples: 2000
+  block_length: 7         # days
+  level: 0.95
+  seed: 42
+dm:
+  horizon: 1              # daily loss differentials of a day-ahead forecast

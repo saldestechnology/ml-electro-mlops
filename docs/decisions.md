@@ -122,3 +122,26 @@
   Under a Swedish/C locale, every Sunday became a public holiday and half days vanished. Fixed
   by pinning `language="en_US"`; a test runs the calendar under three locales. Datasets built
   on 2026-10-01 were built under en_US and are unaffected (rebuilt SE3 digests identical).
+
+## 2026-10-04 — No ENTSO-E token (owner decision)
+- The owner chose not to apply for an ENTSO-E token. elprisetjustnu.se is the price source of
+  record. The 5 known-bad days stay excluded (no replacement source), and the full every-day
+  cross-check against ENTSO-E will not happen; the sample verification (Nord Pool, Energy-
+  Charts) is the evidence. ENTSO-E fundamentals (load/wind/solar forecasts, flows, outages,
+  hydro) are out of scope unless a token is obtained later; the client code stays.
+
+## 2026-10-04 — M3 backtest harness and baselines
+- **Harness**: rolling origin over the true-lead dataset; fit on stitched-dataset rows with
+  target_date <= origin day (published before the origin); monthly refit by default,
+  `every_origin` for models that need the latest history. Quantile crossing fixed by sorting;
+  NaN quantiles fail the run.
+- **Baselines**: seasonal naive 7d (the spec's reference), seasonal naive 1d, the standard EPF
+  `naive_weekday` (1d for Tue-Fri, 7d for Sat-Mon), and StatsForecast MSTL(24,168)+AutoETS.
+  Naive quantiles = empirical per-hour quantiles of the method's own errors (last 56 days).
+- **Dev-mode bias found**: `dev_every_n_days: 7` sampled only Fridays (every target a Saturday),
+  which flipped the ranking of the 1d and 7d naives. Now 5, and multiples of 7 are rejected.
+- **Statistics**: circular block bootstrap (7-day blocks, 2,000 resamples, percentile 95% CI)
+  on daily losses; Diebold-Mariano with the HLN correction on daily loss differentials.
+- **sMAPE** denominator floored at 1 EUR/MWh (near-zero and negative prices).
+- **Crisis**: the evaluation window (Oct 2025 - Sep 2026) contains no 2022-23 crisis data, so
+  "with/without crisis" is a training-data question (`train_start`), compared in M4.

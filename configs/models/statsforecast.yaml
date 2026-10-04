@@ -1,0 +1,3 @@
+# MSTL (24h + 168h seasonality) with an AutoETS trend, refit at every origin on the last
+# `context_days` of hourly prices. Quantiles from its Gaussian prediction intervals.
+mstl_ets: {context_days: 56}
