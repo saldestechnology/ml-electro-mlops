@@ -284,6 +284,37 @@ def backtest_run_cmd(
             typer.echo(table[[c for c in cols if c in table.columns]].to_string(index=False))
 
 
+RUN_IDS_ARG = typer.Argument(..., help="MLflow backtest run IDs (same zone).")
+
+
+@backtest_app.command("compare")
+def backtest_compare_cmd(
+    run_id: list[str] = RUN_IDS_ARG,
+    config: Path = CONFIG_OPT,
+    backtest_config: Path = BACKTEST_OPT,
+) -> None:
+    """Compare logged backtest runs (bootstrap CIs + Diebold-Mariano) and log the result."""
+    import pandas as pd
+
+    from pricefc.backtest.run import compare_runs
+    from pricefc.config import load_backtest_config
+
+    cfg = load_backtest_config(backtest_config)
+    table = compare_runs(load_config(config), cfg, run_id)
+    cols = [
+        "model",
+        "days",
+        "pinball_mean",
+        "pinball_lo",
+        "pinball_hi",
+        "ae_mean",
+        "pinball_skill_vs_ref",
+        "pinball_dm_p",
+    ]
+    with pd.option_context("display.width", 200, "display.float_format", "{:.3f}".format):
+        typer.echo(table[[c for c in cols if c in table.columns]].to_string(index=False))
+
+
 HPO_OPT = typer.Option(Path("configs/hpo/lightgbm.yaml"), "--hpo-config")
 
 

@@ -1,5 +1,6 @@
 from datetime import date
 from functools import cache
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -10,8 +11,12 @@ from hypothesis import strategies as st
 
 from pricefc.backtest.harness import needs_refit, run_backtest, select_origins
 from pricefc.backtest.metrics import qcol
+from pricefc.config import load_features_config
+from pricefc.datasets.build import META_COLUMNS
 from pricefc.models.baselines import SeasonalNaive
 from tests.test_leakage import builder
+
+FEATS = load_features_config(Path("configs/features.yaml"))
 
 QS = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95]
 
@@ -136,3 +141,47 @@ def test_model_spec_overrides() -> None:
     assert params["lightgbm"]["seed"] == 42  # the shared config is not mutated
     with pytest.raises(ValueError):
         resolve_spec("lightgbm@lr=0.1", params, None)
+
+
+def test_variants_of_one_model_are_compared_separately(tmp_path: Path) -> None:
+    """Regression: outcomes were keyed by base name, so a variant overwrote its parent."""
+    from pricefc.backtest.run import run_zone
+    from pricefc.config import load_backtest_config, load_config
+    from pricefc.datasets.registry import write_dataset
+
+    base = load_config(
+        Path("configs/base.yaml"),
+        {
+            "paths": {
+                "data_root": str(tmp_path),
+                "raw": str(tmp_path / "raw"),
+                "datasets": str(tmp_path / "ds"),
+            }
+        },
+    )
+    df = synthetic_dataset()
+    frames = {"stitched": df, "true_lead": df.iloc[:-1]}  # distinct content, distinct versions
+    for kind, frame in frames.items():
+        write_dataset(
+            frame,
+            base=base,
+            features=FEATS,
+            zone="SE3",
+            name=kind,
+            description={"weather_kind": kind, "weather_source": "synthetic", "sources": {}},
+            build_info={"meta_columns": list(META_COLUMNS)},
+            leakage_report={},
+        )
+    cfg = load_backtest_config(Path("configs/backtest.yaml"))
+    params = {"seasonal_naive_7d": {"lag_days": 7}}
+    specs = ["seasonal_naive_7d", "seasonal_naive_7d@train_start=2025-03-20"]
+    outcomes, table = run_zone(
+        base,
+        cfg.model_copy(update={"eval_start": date(2025, 3, 25)}),
+        params,
+        "SE3",
+        models=specs,
+        log_to_mlflow=False,
+    )
+    assert list(outcomes) == specs
+    assert sorted(table["model"]) == sorted(specs)

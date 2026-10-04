@@ -157,7 +157,7 @@ def run_zone(
         )
         log.info(
             "model_done",
-            model=name,
+            model=spec,
             pinball=round(outcome.metrics["pinball_mean"], 3),
             mae=round(outcome.metrics["mae"], 3),
             **summarize(res),
@@ -169,7 +169,7 @@ def run_zone(
                 cfg,
                 zone,
                 model,
-                model_params[name],
+                params,  # resolved, incl. variant overrides
                 outcome,
                 train_ds,
                 eval_ds,
@@ -177,7 +177,9 @@ def run_zone(
                 eval_df,
                 dev,
             )
-        outcomes[name] = outcome
+        if spec in outcomes:
+            raise ValueError(f"model spec {spec!r} listed twice")
+        outcomes[spec] = outcome  # keyed by the full spec: variants must not collide
     table = compare(outcomes, cfg.reference_model, cfg)
     if log_to_mlflow:
         _log_compare_run(base, cfg, zone, table, outcomes, eval_ds, dev)
@@ -300,3 +302,35 @@ def _log_compare_run(
             table.to_csv(Path(tmp) / "comparison.csv", index=False)
             mlflow.log_artifacts(tmp)
         return str(run.info.run_id)
+
+
+def compare_runs(
+    base: BaseConfig, cfg: BacktestConfig, run_ids: list[str], *, log_to_mlflow: bool = True
+) -> pd.DataFrame:
+    """Re-run the comparison from logged backtest runs (their daily losses), e.g. to combine
+    runs from separate invocations. All runs must share the zone and evaluation dataset."""
+    import mlflow
+
+    from pricefc.tracking.mlflow_utils import setup_tracking
+
+    setup_tracking(base)
+    outcomes: dict[str, ModelOutcome] = {}
+    zones, versions = set(), set()
+    for rid in run_ids:
+        run = mlflow.get_run(rid)
+        zones.add(run.data.tags["zone"])
+        versions.add(run.data.tags["dataset_version"])
+        path = mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="daily_losses.csv")
+        daily = pd.read_csv(path, index_col="target_date")
+        name = run.data.params["model"]
+        if name in outcomes:
+            raise ValueError(f"two runs for model spec {name!r}")
+        outcomes[name] = ModelOutcome(None, {}, pd.DataFrame(), daily, rid)  # type: ignore[arg-type]
+    if len(zones) != 1 or len(versions) != 1:
+        raise ValueError(f"runs mix zones {zones} or evaluation datasets {versions}")
+    table = compare(outcomes, cfg.reference_model, cfg)
+    if log_to_mlflow:
+        zone = zones.pop()
+        eval_ds = next(d for d in find_datasets(base, zone) if d.version == versions.pop())
+        _log_compare_run(base, cfg, zone, table, outcomes, eval_ds, dev=False)
+    return table
