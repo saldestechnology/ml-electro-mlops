@@ -145,3 +145,16 @@
 - **sMAPE** denominator floored at 1 EUR/MWh (near-zero and negative prices).
 - **Crisis**: the evaluation window (Oct 2025 - Sep 2026) contains no 2022-23 crisis data, so
   "with/without crisis" is a training-data question (`train_start`), compared in M4.
+- **Baseline results** (full backtest, 365 origins 2025-10-03..2026-10-02, datasets
+  2026-10-04; mean pinball EUR/MWh with 95% block-bootstrap CI; skill vs seasonal naive 7d):
+
+  | Zone | MSTL+ETS | Naive 1d | EPF weekday naive | Naive 7d (ref) | MSTL skill |
+  |------|----------|----------|-------------------|----------------|------------|
+  | SE1 | 5.95 (5.31-6.65) | 7.70 | 8.41 | 11.12 | 0.47 |
+  | SE2 | 6.22 (5.53-6.97) | 8.02 | 8.80 | 11.48 | 0.46 |
+  | SE3 | 6.53 (6.09-6.98) | 9.15 | 9.16 | 11.61 | 0.44 |
+  | SE4 | 8.35 (7.63-9.14) | 11.41 | 11.52 | 13.69 | 0.39 |
+
+  Every model beats the 7d reference with DM p < 0.001. MSTL is the bar for M4. Interval
+  coverage (80/90%): MSTL 0.78-0.83 / 0.85-0.90 (close to nominal); naives ~0.74 / ~0.84
+  (too narrow). The EPF weekday naive does not beat the plain 1d naive here.
