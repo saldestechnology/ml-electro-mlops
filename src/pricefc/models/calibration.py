@@ -93,6 +93,10 @@ class RecalibratedForecaster:
     def version_info(self) -> dict[str, Any]:
         return self.base.version_info()
 
+    def run_tags(self) -> dict[str, str]:
+        tags: dict[str, str] = getattr(self.base, "run_tags", dict)()
+        return tags
+
     def feature_importance(self) -> pd.DataFrame:
         fi = getattr(self.base, "feature_importance", None)
         if fi is None:

@@ -189,4 +189,8 @@ def _build_base(name: str, quantiles: Sequence[float], params: dict[str, Any]) -
         from pricefc.models.lgbm import LGBMQuantile
 
         return LGBMQuantile(quantiles=quantiles, name=name, **params)
+    if name.startswith("timesfm"):
+        from pricefc.models.timesfm import TimesFMForecaster
+
+        return TimesFMForecaster(quantiles, name=name, **params)
     raise KeyError(f"unknown model {name!r}")

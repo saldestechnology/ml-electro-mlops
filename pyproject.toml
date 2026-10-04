@@ -28,6 +28,14 @@ dependencies = [
 [project.optional-dependencies]
 local-mac = []
 gpu-cuda = []
+# Foundation models (M5); optional so CI and the base install stay free of torch.
+# jax/scikit-learn: TimesFM 2.5 covariates (XReg); the upstream "xreg" extra pins jax[cuda].
+timesfm = [
+    "timesfm[torch]==3.0.2",
+    "mlx>=0.32; sys_platform == 'darwin'",  # TimesFM 3.0 Apple-silicon backend
+    "jax>=0.7",
+    "scikit-learn>=1.5",
+]
 
 [project.scripts]
 pricefc = "pricefc.cli:app"

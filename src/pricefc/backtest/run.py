@@ -236,6 +236,7 @@ def _log_model_run(
     setup_tracking(base)
     tags = _tags(base, zone, eval_ds, model.family, "backtest", dev)
     tags["train_dataset_version"] = train_ds.version
+    tags.update(getattr(model, "run_tags", dict)())  # e.g. model licence, deployable
     with start_run("backtest", tags, base, run_name=f"{zone}-{model.name}") as run:
         mlflow.log_params(
             {

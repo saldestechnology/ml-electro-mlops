@@ -1,0 +1,40 @@
+# TimesFM foundation models (M5), zero-shot. Checkpoints pinned by Hugging Face revision.
+# 2.5 (Apache-2.0) is the deployable candidate. 3.0 weights are non-commercial /
+# non-production: research benchmark only, tagged deployable=false, never registered.
+# Covariates are the zone-level weather aggregates and calendar features of the dataset
+# (zone-agnostic column names); future values come from the leakage-audited feature rows.
+timesfm25:
+  version: "2.5"
+  revision: 1d952420fba87f3c6dee4f240de0f1a0fbc790e3
+  context_hours: 2048
+  backend: torch
+  device: cpu  # MPS was ~8x slower than CPU in the smoke test
+timesfm25_cov:
+  version: "2.5"
+  revision: 1d952420fba87f3c6dee4f240de0f1a0fbc790e3
+  context_hours: 2048
+  backend: torch
+  device: cpu
+  covariates: &cov
+    - wz_temperature_2m_mean
+    - wz_wind_speed_100m_mean
+    - wz_shortwave_radiation_mean
+    - wz_cloud_cover_mean
+    - cal_hour_sin
+    - cal_hour_cos
+    - cal_is_weekend
+    - cal_is_public_holiday
+    - cal_is_de_facto_holiday
+timesfm3:
+  version: "3.0"
+  revision: 43046b85ec22d584a13f8098c2ed39c889e129c2
+  context_hours: 2048
+  backend: mlx  # Apple silicon; `torch` on CUDA/CPU
+  accept_noncommercial_licence: true  # owner decision 2026-10-04: benchmark only
+timesfm3_cov:
+  version: "3.0"
+  revision: 43046b85ec22d584a13f8098c2ed39c889e129c2
+  context_hours: 2048
+  backend: mlx
+  accept_noncommercial_licence: true
+  covariates: *cov
