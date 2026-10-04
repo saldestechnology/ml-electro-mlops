@@ -284,12 +284,14 @@ def backtest_run_cmd(
             typer.echo(table[[c for c in cols if c in table.columns]].to_string(index=False))
 
 
+REFERENCE_OPT = typer.Option(None, help="Model spec to compare against (default: config).")
 RUN_IDS_ARG = typer.Argument(..., help="MLflow backtest run IDs (same zone).")
 
 
 @backtest_app.command("compare")
 def backtest_compare_cmd(
     run_id: list[str] = RUN_IDS_ARG,
+    reference: str | None = REFERENCE_OPT,
     config: Path = CONFIG_OPT,
     backtest_config: Path = BACKTEST_OPT,
 ) -> None:
@@ -300,6 +302,8 @@ def backtest_compare_cmd(
     from pricefc.config import load_backtest_config
 
     cfg = load_backtest_config(backtest_config)
+    if reference:
+        cfg = cfg.model_copy(update={"reference_model": reference})
     table = compare_runs(load_config(config), cfg, run_id)
     cols = [
         "model",
