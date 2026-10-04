@@ -158,3 +158,32 @@
   Every model beats the 7d reference with DM p < 0.001. MSTL is the bar for M4. Interval
   coverage (80/90%): MSTL 0.78-0.83 / 0.85-0.90 (close to nominal); naives ~0.74 / ~0.84
   (too narrow). The EPF weekday naive does not beat the plain 1d naive here.
+
+## 2026-10-04 — M4 LightGBM (SE3)
+- **Tuning** (Optuna, 40 trials, 28 complete / 12 pruned, 46 min): 4 expanding folds of 91 days
+  ending 2025-10-02, i.e. before the evaluation window, asserted in code. Objective: mean
+  pinball over q10/q50/q90 (subset for speed). Best: lr 0.025, 252 leaves, min_child 263,
+  colsample 0.63, subsample 0.75, n_estimators 220 (median early-stopping iteration).
+  Learning rate and min_child_samples explain ~80% of the variance between trials. Validation
+  folds use stitched weather (no true-lead data exists before Oct 2025).
+- **Backtest, SE3, 365 origins** (mean pinball EUR/MWh):
+  tuned+recalibrated(28d) 5.727 | tuned 5.753 | untuned 5.845 | tuned, trained from 2023-07
+  6.088 | MSTL 6.530 | naive 7d 11.613.
+  vs MSTL: -0.78 EUR/MWh, 95% block-bootstrap CI [-1.15, -0.40], DM p < 0.001.
+  tuned vs untuned: -0.09, CI [-0.19, +0.005], DM p = 0.017 (small, borderline).
+- **Crisis years help**: training from 2023-07-01 instead of all history is clearly worse
+  (6.09 vs 5.75), so `train_start` stays null.
+- **Calibration problem and fix**: raw LightGBM was overconfident on true-lead data (80/90%
+  intervals covered 72/84%, bias -5.7 EUR/MWh, 22% of rows had crossing quantiles fixed by
+  sorting), consistent with training on optimistic stitched weather. A rolling per-quantile
+  recalibration (offsets from the model's own forecasts of the last 28 published days) gives
+  coverage 77.6/87.9%, bias -2.1, and the best pinball. A 14-day window is worse (too noisy).
+  The first ~7 days of a deployment are uncalibrated (cold start).
+- **Seed variance** (6 seeds, recalibrated): pinball 5.730 +/- 0.009 (sd), coverage
+  0.777/0.881 +/- 0.002, i.e. ~100x smaller than the margin over MSTL.
+- **Feature importance** (gain, median model): own price lags/stats 55% (p_lag1d alone 26%),
+  weather 27% (100 m wind leads), calendar 12%, neighbour prices 6%.
+- **Leakage hardening**: `predict()` no longer receives y or its metadata (test enforced).
+- **Bugs found and fixed while running M4**: comparison keyed variants by base name (a variant
+  overwrote its parent; regression test fails on the old code); MLflow logged base params for
+  variants; '@'/'=' invalid in MLflow metric names; `compare_runs` set-pop in a generator.

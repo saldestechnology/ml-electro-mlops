@@ -55,6 +55,8 @@ def resolve_spec(
             params["seed"] = int(value)
         elif key == "train_start":
             train_start = date.fromisoformat(value)
+        elif key == "calibration":
+            params["calibration_window_days"] = int(value)
         else:
             raise ValueError(f"unsupported override {key!r} in {spec!r}")
     return name, params, train_start
@@ -264,8 +266,12 @@ def _log_model_run(
             o.slices.to_csv(t / "slice_metrics.csv", index=False)
             o.daily.to_csv(t / "daily_losses.csv")
             o.result.fit_log().to_csv(t / "fit_log.csv", index=False)
-            if hasattr(model, "feature_importance"):
+            if getattr(model, "calibration_log", None):
+                pd.DataFrame(model.calibration_log).to_csv(t / "calibration_log.csv", index=False)
+            try:
                 model.feature_importance().to_csv(t / "feature_importance_gain.csv")
+            except AttributeError:
+                pass  # model has no feature importances
             mlflow.log_artifacts(tmp)
         return str(run.info.run_id)
 

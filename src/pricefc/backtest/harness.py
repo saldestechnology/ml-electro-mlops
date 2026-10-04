@@ -19,6 +19,8 @@ import pandas as pd
 from pricefc.backtest.metrics import quantile_columns, sort_quantiles
 from pricefc.models.base import Forecaster
 
+TARGET_COLUMNS = ["y", "y_n_periods", "y_is_pt15m"]
+
 
 @dataclass
 class FitRecord:
@@ -103,7 +105,8 @@ def run_backtest(
         rows = eval_by_origin[day.isoformat()]
         origin_ts = pd.Timestamp(rows["origin"].iloc[0])
         t0 = time.perf_counter()
-        pred = model.predict(origin_ts, rows)
+        # Models never see the target (or its metadata) at prediction time.
+        pred = model.predict(origin_ts, rows.drop(columns=TARGET_COLUMNS))
         result.predict_seconds += time.perf_counter() - t0
         if list(pred.columns) != cols or not pred.index.equals(rows.index):
             raise ValueError(f"{model.name}: prediction shape/columns do not match the contract")

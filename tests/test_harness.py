@@ -195,3 +195,16 @@ def test_variants_of_one_model_are_compared_separately(tmp_path: Path) -> None:
 
     again = compare_runs(base, cfg, [str(o.run_id) for o in outcomes.values()])
     pd.testing.assert_frame_equal(table, again)
+
+
+def test_predict_never_receives_the_target() -> None:
+    seen: list[set[str]] = []
+
+    class Peek(Spy):
+        def predict(self, origin: pd.Timestamp, features: pd.DataFrame) -> pd.DataFrame:
+            seen.append(set(features.columns))
+            return super().predict(origin, features)
+
+    df = synthetic_dataset()
+    run_backtest(Peek("monthly"), df, df, select_origins(df)[3:6], QS)  # type: ignore[arg-type]
+    assert seen and all(not cols & {"y", "y_n_periods", "y_is_pt15m"} for cols in seen)

@@ -169,6 +169,18 @@ class MSTLForecaster:
 
 
 def build_model(name: str, quantiles: Sequence[float], params: dict[str, Any]) -> Any:
+    """Build a model; `calibration_window_days` wraps it in rolling quantile recalibration."""
+    params = dict(params)
+    window = params.pop("calibration_window_days", None)
+    model = _build_base(name, quantiles, params)
+    if window:
+        from pricefc.models.calibration import RecalibratedForecaster
+
+        return RecalibratedForecaster(model, quantiles, window_days=int(window))
+    return model
+
+
+def _build_base(name: str, quantiles: Sequence[float], params: dict[str, Any]) -> Any:
     if name.startswith("seasonal_naive") or name == "naive_weekday":
         return SeasonalNaive(quantiles=quantiles, **params)
     if name == "mstl_ets":
