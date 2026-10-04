@@ -214,3 +214,47 @@
   DM significant, coverage within 3 points of nominal, leakage audits clean. Formal
   registration and the champion alias happen in M6 (requires the pyfunc wrapper).
 - `backtest run` / `backtest compare` now print the paired difference CI columns.
+
+## 2026-10-05 — M5 TimesFM (zero-shot, covariates)
+- **Versions verified** (PyPI `timesfm` 3.0.2; Hugging Face): TimesFM 2.5 200M
+  (`google/timesfm-2.5-200m-pytorch@1d952420…`, Apache-2.0, up to 16k context, deciles,
+  covariates via XReg = in-context linear regression + TimesFM on residuals) and TimesFM 3.0
+  (`google/timesfm-3.0-pytorch@43046b85…`, native past/future covariates, MLX backend).
+- **Licence decision (owner, 2026-10-04)**: 3.0 weights are `timesfm-non-commercial-license-v1.0`
+  (no production or commercial use; fine-tunes are derivatives under the same terms). 3.0 is a
+  research benchmark only: guarded by `accept_noncommercial_licence`, runs tagged
+  `deployable=false`, never registered or served. 2.5 is the deployable candidate.
+- **Mac smoke test**: 2.5 torch CPU 0.24 s/forecast (MPS slower, 1.8 s); 3.0 MLX 0.05 s.
+  `infer_is_positive` must be off (it clamps forecasts at 0 when the context has no negative
+  prices). No GPU needed for zero-shot: a full-year backtest is 1.5-5 min per model.
+- **Deadlock found**: LightGBM and torch ship separate libomp copies on macOS; torch
+  inference hangs after a LightGBM fit in the same process. Fixed by one torch thread.
+- **Adapter**: context = last 2048 published hours (ends at local midnight before D+1);
+  deciles mapped to our quantiles (interpolation, normal-scaled tails). Covariates = zone
+  weather means (temperature, 100 m wind, radiation, cloud) + calendar; future values from the
+  leakage-audited feature rows, past values from training rows (stitched weather).
+- **Results, 365 true-lead origins** (mean pinball; diff vs tuned LightGBM+recal, 95% CI):
+
+  | zone | LGBM+recal | 3.0+cov | diff [CI] | 3.0 | 2.5 | diff 2.5 [CI] |
+  |---|---|---|---|---|---|---|
+  | SE1 | 5.053 | **4.054** | -1.00 [-1.28, -0.72] | 4.792 | 4.927 | -0.13 [-0.42, +0.19] |
+  | SE2 | 4.788 | **3.866** | -0.92 [-1.21, -0.66] | 5.082 | 5.188 | +0.40 [+0.14, +0.67] |
+  | SE3 | 5.727 | **4.989** | -0.74 [-1.01, -0.45] | 5.757 | 6.118 | +0.39 [+0.07, +0.71] |
+  | SE4 | 6.920 | **6.059** | -0.86 [-1.11, -0.62] | 7.110 | 7.505 | +0.59 [+0.24, +0.95] |
+
+  DM p < 0.001 for 3.0+cov in every zone. Coverage 80/90 without recalibration: 3.0+cov
+  76-80% / 86-88%, 2.5 77-80% / 86-88%; recalibration does not help TimesFM (SE3: 3.0+cov
+  4.989 -> 5.035, 2.5 6.118 -> 6.215).
+- **2.5 with XReg covariates is worse than 2.5 alone** (dev SE3 5.99 vs 5.45): the linear
+  in-context regression does not capture the weather-price relation. Dropped.
+- **Dev-mode caution**: the 73-origin dev sample ranked 2.5 level with LightGBM (5.45 vs
+  5.47); over the full year 2.5 is clearly worse in SE2-SE4. Full runs decide.
+- **Slices (SE3)**: 2.5 beats LightGBM strongly at night (hours 0-5: 2.5-3.9 vs 4.4-4.9),
+  on negative-price hours and in winter/spring; LightGBM wins hours 7-23 and spike days.
+  Complementary errors: a strong case for the M8 ensemble of the two deployable models.
+- **Fine-tuning decision**: not now. 3.0 already wins but cannot be deployed, and a fine-tune
+  would inherit its licence. 2.5 meets the spec's slice precondition, but the free option
+  (M8 ensemble LightGBM + 2.5, possibly per hour) should be tried first; fine-tuning 2.5 on
+  RunPod only if a clear gap to 3.0+cov remains, and only with owner approval of the cost.
+- 3.0+cov shows how much headroom exists (~15% over LightGBM); it is the benchmark the
+  deployable stack should approach.
