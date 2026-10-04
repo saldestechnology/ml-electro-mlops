@@ -173,4 +173,8 @@ def build_model(name: str, quantiles: Sequence[float], params: dict[str, Any]) -
         return SeasonalNaive(quantiles=quantiles, **params)
     if name == "mstl_ets":
         return MSTLForecaster(quantiles=quantiles, **params)
+    if name.startswith("lightgbm"):
+        from pricefc.models.lgbm import LGBMQuantile
+
+        return LGBMQuantile(quantiles=quantiles, name=name, **params)
     raise KeyError(f"unknown model {name!r}")

@@ -270,9 +270,9 @@ def load_backtest_config(path: Path) -> BacktestConfig:
 
 
 def load_model_params(models_dir: Path) -> dict[str, dict[str, Any]]:
-    """Merge every configs/models/*.yaml into {model_name: params}."""
+    """Merge every configs/models/**/*.yaml into {model_name: params}."""
     params: dict[str, dict[str, Any]] = {}
-    for f in sorted(models_dir.glob("*.yaml")):
+    for f in sorted(models_dir.rglob("*.yaml")):
         for name, p in load_yaml(f).items():
             if name in params:
                 raise ValueError(f"model {name!r} defined twice")

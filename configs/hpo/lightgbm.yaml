@@ -1,0 +1,19 @@
+# Optuna search for the LightGBM quantile model (spec 8.5). Tuning uses only training-dataset
+# rows before the backtest evaluation window; the folds are checked in code.
+study: {n_trials: 40, timeout_s: 5400, seed: 42}
+cv:
+  n_folds: 4        # expanding window; validation blocks are consecutive
+  val_days: 91      # ~a quarter each, so the folds span the year before evaluation
+  gap_days: 1
+tune_quantiles: [0.1, 0.5, 0.9]   # subset of the configured quantiles, for speed
+max_estimators: 2000
+early_stopping_rounds: 100
+fixed: {subsample_freq: 1}
+space:
+  learning_rate: {low: 0.02, high: 0.2, log: true}
+  num_leaves: {low: 15, high: 255, log: true, int: true}
+  min_child_samples: {low: 10, high: 400, log: true, int: true}
+  colsample_bytree: {low: 0.3, high: 1.0}
+  subsample: {low: 0.5, high: 1.0}
+  reg_alpha: {low: 0.001, high: 10.0, log: true}
+  reg_lambda: {low: 0.001, high: 10.0, log: true}

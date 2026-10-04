@@ -279,6 +279,33 @@ def backtest_run_cmd(
             typer.echo(table[[c for c in cols if c in table.columns]].to_string(index=False))
 
 
+HPO_OPT = typer.Option(Path("configs/hpo/lightgbm.yaml"), "--hpo-config")
+
+
+@app.command("tune")
+def tune_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    train_version: str | None = VERSION_OPT,
+    config: Path = CONFIG_OPT,
+    hpo_config: Path = HPO_OPT,
+) -> None:
+    """Tune LightGBM with Optuna on data before the evaluation window; write the config."""
+    from datetime import date as date_
+
+    from pricefc.backtest.run import latest_dataset
+    from pricefc.models.tuning import load_hpo_config, tune_zone
+
+    base = load_config(config)
+    cfg = load_hpo_config(hpo_config)
+    for z in zone or list(base.zones):
+        eval_ds = latest_dataset(base, z, "true_lead")
+        eval_start = date_.fromisoformat(eval_ds.manifest["origin_first"])
+        train_ds = latest_dataset(base, z, "stitched", train_version)
+        study, run_id, path = tune_zone(base, cfg, z, eval_start, train_ds)
+        typer.echo(f"{z}: best pinball {study.best_value:.4f} params {study.best_params}")
+        typer.echo(f"{z}: wrote {path} (mlflow run {run_id})")
+
+
 @app.command()
 def snapshots(config: Path = CONFIG_OPT) -> None:
     """List raw snapshots with row counts and validation status."""
