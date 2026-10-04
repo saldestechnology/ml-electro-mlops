@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,30 @@ class ModelOutcome:
     slices: pd.DataFrame
     daily: pd.DataFrame
     run_id: str | None = None
+    train_start: date | None = None
+
+
+def resolve_spec(
+    spec: str, model_params: dict[str, dict[str, Any]], default_train_start: date | None
+) -> tuple[str, dict[str, Any], date | None]:
+    """'name@seed=3@train_start=2023-07-01' -> (name, params with overrides, train_start).
+
+    Variants of one model can then be backtested side by side under identical conditions.
+    """
+    name, *overrides = spec.split("@")
+    if name not in model_params:
+        raise KeyError(f"unknown model {name!r}")
+    params = dict(model_params[name])
+    train_start = default_train_start
+    for ov in overrides:
+        key, _, value = ov.partition("=")
+        if key == "seed":
+            params["seed"] = int(value)
+        elif key == "train_start":
+            train_start = date.fromisoformat(value)
+        else:
+            raise ValueError(f"unsupported override {key!r} in {spec!r}")
+    return name, params, train_start
 
 
 def latest_dataset(
@@ -117,10 +142,12 @@ def run_zone(
         dev=dev,
     )
     outcomes: dict[str, ModelOutcome] = {}
-    for name in models or cfg.models:
-        model = build_model(name, base.quantiles, model_params[name])
+    for spec in models or cfg.models:
+        name, params, train_start = resolve_spec(spec, model_params, cfg.train_start)
+        model = build_model(name, base.quantiles, params)
+        model.name = spec
         res = run_backtest(
-            model, train_df, eval_df, origins, base.quantiles, train_start=cfg.train_start
+            model, train_df, eval_df, origins, base.quantiles, train_start=train_start
         )
         outcome = ModelOutcome(
             res,
@@ -135,6 +162,7 @@ def run_zone(
             mae=round(outcome.metrics["mae"], 3),
             **summarize(res),
         )
+        outcome.train_start = train_start
         if log_to_mlflow:
             outcome.run_id = _log_model_run(
                 base,
@@ -203,7 +231,7 @@ def _log_model_run(
                 **{f"model.{k}": v for k, v in params.items()},
                 **{f"model.version.{k}": v for k, v in model.version_info().items()},
                 "model": model.name,
-                "train_start": str(cfg.train_start),
+                "train_start": str(o.train_start),
                 "eval_first": o.result.forecasts["origin_date"].min(),
                 "eval_last": o.result.forecasts["origin_date"].max(),
                 "origins": o.result.forecasts["origin_date"].nunique(),
@@ -228,6 +256,8 @@ def _log_model_run(
             o.slices.to_csv(t / "slice_metrics.csv", index=False)
             o.daily.to_csv(t / "daily_losses.csv")
             o.result.fit_log().to_csv(t / "fit_log.csv", index=False)
+            if hasattr(model, "feature_importance"):
+                model.feature_importance().to_csv(t / "feature_importance_gain.csv")
             mlflow.log_artifacts(tmp)
         return str(run.info.run_id)
 

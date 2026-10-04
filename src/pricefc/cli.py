@@ -230,6 +230,7 @@ BACKTEST_OPT = typer.Option(Path("configs/backtest.yaml"), "--backtest-config")
 MODELS_DIR_OPT = typer.Option(Path("configs/models"), "--models-dir")
 MODEL_OPT = typer.Option(None, "--model", "-m", help="Repeatable. Default: backtest config.")
 DEV_OPT = typer.Option(False, "--dev", help="Every n-th origin only (fast).")
+SEEDS_OPT = typer.Option(None, "--seed", help="Repeatable: run every model once per seed.")
 VERSION_OPT = typer.Option(None, help="Dataset version (default: latest).")
 
 
@@ -238,6 +239,7 @@ def backtest_run_cmd(
     zone: list[str] | None = ZONE_OPT,
     model: list[str] | None = MODEL_OPT,
     dev: bool = DEV_OPT,
+    seeds: list[int] | None = SEEDS_OPT,
     train_version: str | None = VERSION_OPT,
     eval_version: str | None = VERSION_OPT,
     config: Path = CONFIG_OPT,
@@ -254,12 +256,15 @@ def backtest_run_cmd(
     cfg = load_backtest_config(backtest_config)
     params = load_model_params(models_dir)
     for z in zone or list(base.zones):
+        specs = list(model or cfg.models)
+        if seeds:
+            specs = [f"{m}@seed={s}" for m in specs for s in seeds]
         _, table = run_zone(
             base,
             cfg,
             params,
             z,
-            models=model,
+            models=specs,
             dev=dev,
             train_version=train_version,
             eval_version=eval_version,

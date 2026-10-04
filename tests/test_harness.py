@@ -125,3 +125,14 @@ def test_weekly_dev_stride_is_rejected() -> None:
     raw = load_yaml(Path("configs/backtest.yaml"))
     with pytest.raises(ValidationError, match="multiple of 7"):
         BacktestConfig.model_validate({**raw, "dev_every_n_days": 14})
+
+
+def test_model_spec_overrides() -> None:
+    from pricefc.backtest.run import resolve_spec
+
+    params = {"lightgbm": {"seed": 42, "n_estimators": 10}}
+    name, p, ts = resolve_spec("lightgbm@seed=3@train_start=2023-07-01", params, None)
+    assert (name, p["seed"], ts) == ("lightgbm", 3, date(2023, 7, 1))
+    assert params["lightgbm"]["seed"] == 42  # the shared config is not mutated
+    with pytest.raises(ValueError):
+        resolve_spec("lightgbm@lr=0.1", params, None)
