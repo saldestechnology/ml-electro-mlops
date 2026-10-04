@@ -156,7 +156,11 @@ def test_variants_of_one_model_are_compared_separately(tmp_path: Path) -> None:
                 "data_root": str(tmp_path),
                 "raw": str(tmp_path / "raw"),
                 "datasets": str(tmp_path / "ds"),
-            }
+            },
+            "mlflow": {
+                "tracking_uri": f"sqlite:///{tmp_path}/m.db",
+                "artifact_root": str(tmp_path / "art"),
+            },
         },
     )
     df = synthetic_dataset()
@@ -181,7 +185,13 @@ def test_variants_of_one_model_are_compared_separately(tmp_path: Path) -> None:
         params,
         "SE3",
         models=specs,
-        log_to_mlflow=False,
+        log_to_mlflow=True,
     )
     assert list(outcomes) == specs
     assert sorted(table["model"]) == sorted(specs)
+
+    # Recomputing from the logged runs gives the same comparison.
+    from pricefc.backtest.run import compare_runs
+
+    again = compare_runs(base, cfg, [str(o.run_id) for o in outcomes.values()])
+    pd.testing.assert_frame_equal(table, again)

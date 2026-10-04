@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 from dataclasses import dataclass
 from datetime import date
@@ -29,6 +30,11 @@ class ModelOutcome:
     daily: pd.DataFrame
     run_id: str | None = None
     train_start: date | None = None
+
+
+def metric_key(spec: str) -> str:
+    """MLflow-safe form of a model spec ('@' and '=' are not allowed in metric names)."""
+    return spec.replace("@", "__").replace("=", "-")
 
 
 def resolve_spec(
@@ -296,7 +302,7 @@ def _log_compare_run(
         for _, row in table.iterrows():
             for k, v in row.items():
                 if k != "model" and pd.notna(v):
-                    mlflow.log_metric(f"{row['model']}.{k}", float(v))
+                    mlflow.log_metric(f"{metric_key(row['model'])}.{k}", float(v))
         mlflow.log_dict({n: o.run_id for n, o in outcomes.items()}, "model_runs.json")
         with tempfile.TemporaryDirectory() as tmp:
             table.to_csv(Path(tmp) / "comparison.csv", index=False)
@@ -313,6 +319,7 @@ def compare_runs(
 
     from pricefc.tracking.mlflow_utils import setup_tracking
 
+    os.environ.setdefault("MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR", "false")
     setup_tracking(base)
     outcomes: dict[str, ModelOutcome] = {}
     zones, versions = set(), set()
@@ -330,7 +337,7 @@ def compare_runs(
         raise ValueError(f"runs mix zones {zones} or evaluation datasets {versions}")
     table = compare(outcomes, cfg.reference_model, cfg)
     if log_to_mlflow:
-        zone = zones.pop()
-        eval_ds = next(d for d in find_datasets(base, zone) if d.version == versions.pop())
+        zone, version = zones.pop(), versions.pop()
+        eval_ds = next(d for d in find_datasets(base, zone) if d.version == version)
         _log_compare_run(base, cfg, zone, table, outcomes, eval_ds, dev=False)
     return table
