@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from dataclasses import dataclass
@@ -268,10 +269,8 @@ def _log_model_run(
             o.result.fit_log().to_csv(t / "fit_log.csv", index=False)
             if getattr(model, "calibration_log", None):
                 pd.DataFrame(model.calibration_log).to_csv(t / "calibration_log.csv", index=False)
-            try:
+            with contextlib.suppress(AttributeError):  # not every model has importances
                 model.feature_importance().to_csv(t / "feature_importance_gain.csv")
-            except AttributeError:
-                pass  # model has no feature importances
             mlflow.log_artifacts(tmp)
         return str(run.info.run_id)
 
