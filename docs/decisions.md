@@ -305,3 +305,28 @@
   weighting were chosen after seeing test-year scores, so the winners' scores are mildly
   optimistic (choices differ by 0.02-0.1 EUR/MWh vs headline gains of 0.5-1.4). Design is now
   frozen; live forecasts from M6 onwards are the clean hold-out.
+
+## 2026-10-05 — M6 infrastructure: VPS, podman, staging/production CD
+- **Owner decisions**: Prefect as scheduler; MLflow tracking + registry on the VPS behind an SSH
+  tunnel; rootless podman; GitHub CI/CD with `staging` and `production` environments. Details
+  and runbook: `docs/deployment.md`.
+- **Topology**: one unprivileged user per environment (`pricefc` production, `pricefc-staging`),
+  locked password, no sudo, linger; one pod each (MLflow, Prefect server, worker) on loopback
+  ports (5000/4200 and 5100/4300). Staging schedules run 15 min ahead of production.
+- **Delivery**: main -> CI -> one image per commit in GHCR -> staging (automatic); release `v*`
+  -> production deploys the same digest after owner approval, only if that commit reached
+  staging. Deploy keys are per environment and bound to `~/bin/deploy` (forced command; shell,
+  injection and port forwarding verified to be refused). Health check with automatic rollback.
+- **Image**: single stage, dependency layer (~2.3 GB) shared across builds; code-only changes are
+  <1 MB to push/pull. jax/scikit-learn moved to a `timesfm-xreg` extra (research only) and torch
+  is CPU-only on Linux, because disk on the shared VPS is limited (~15 GB free) and each
+  environment keeps its own image store.
+- **MLflow 3 server memory**: the GenAI job runner (7 huey consumers) used 1.66 GB idle;
+  `MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false` brings it to ~380 MB. Idle stack per environment
+  ~0.7 GB.
+- **First staging run** (2026-10-05): ingest flow completed; 55 snapshots valid; MLflow runs tagged
+  with the image's git SHA (`PRICEFC_GIT_SHA`, clean) and `compute_env=vps-staging`.
+- **Open**: live weather for D+1. Open-Meteo Previous Runs returns `previous_day2` equal to the
+  latest run for some future hours (7 of 24 for D+1 on 2026-10-05); the forecast flow must
+  reproduce the backtest's day-2 lead exactly or flag the difference. To resolve before the
+  forecast flow goes live.
