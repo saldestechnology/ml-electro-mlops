@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import date, time
 from pathlib import Path
 from typing import Any, Literal
@@ -83,8 +84,16 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+ENV_CONFIG_VAR = "PRICEFC_ENV_CONFIG"
+
+
 def load_config(path: Path, overrides: dict[str, Any] | None = None) -> BaseConfig:
+    """Load the base config, then the deployment overlay named by $PRICEFC_ENV_CONFIG (e.g.
+    configs/envs/production.yaml: paths, zones, tracking server), then explicit overrides."""
     raw = load_yaml(path)
+    env_overlay = os.environ.get(ENV_CONFIG_VAR)
+    if env_overlay:
+        raw = _deep_merge(raw, load_yaml(Path(env_overlay)))
     if overrides:
         raw = _deep_merge(raw, overrides)
     return BaseConfig.model_validate(raw)

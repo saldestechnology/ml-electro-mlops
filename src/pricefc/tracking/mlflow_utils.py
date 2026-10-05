@@ -62,6 +62,8 @@ def setup_tracking(config: BaseConfig, tracking_uri: str | None = None) -> None:
 
 def _artifact_location(config: BaseConfig, experiment: str) -> str | None:
     root = config.mlflow.artifact_root
+    if root.startswith("mlflow-artifacts:"):  # proxied by the tracking server
+        return f"mlflow-artifacts:/{experiment}"
     if "://" in root:
         return f"{root.rstrip('/')}/{experiment}"
     return Path(root, experiment).resolve().as_uri()

@@ -1,0 +1,19 @@
+[Unit]
+Description=pricefc @ENV@ Prefect server
+
+[Container]
+Image=localhost/pricefc:current
+Pod=pricefc.pod
+ContainerName=pricefc-prefect
+Volume=%h/pricefc/prefect:/data/prefect
+Environment=PREFECT_HOME=/data/prefect PREFECT_SERVER_ANALYTICS_ENABLED=false PREFECT_UI_API_URL=http://localhost:@PREFECT_PORT@/api
+Exec=prefect server start --host 0.0.0.0 --port 4200
+HealthCmd=curl -fsS http://localhost:4200/api/health
+HealthInterval=60s
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

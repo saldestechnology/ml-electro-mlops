@@ -1,0 +1,36 @@
+# pricefc runtime image: flows, MLflow server and Prefect server share it (one artifact per
+# commit, promoted unchanged from staging to production). CPU-only torch on Linux (pyproject).
+#   podman build -f docker/Containerfile -t pricefc .
+#
+# Single stage on purpose: the dependency layer (~2 GB) is stored once and shared by every
+# image built from the same uv.lock, so a code-only change is a small layer to push and pull.
+
+FROM python:3.12-slim-trixie
+# libgomp: LightGBM's OpenMP runtime. curl: container health checks.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/app/.venv UV_NO_CACHE=1
+WORKDIR /app
+
+# Dependencies only: changes only when uv.lock changes.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project --extra timesfm --extra serve
+
+# The project itself (small layer).
+COPY src ./src
+RUN uv sync --frozen --no-dev --no-editable --extra timesfm --extra serve
+COPY configs ./configs
+COPY deploy ./deploy
+
+ARG GIT_SHA=unknown
+ENV PATH=/app/.venv/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PRICEFC_GIT_SHA=${GIT_SHA} \
+    HF_HOME=/data/hf-cache \
+    MLFLOW_DISABLE_AGENT_HINT=1
+LABEL org.opencontainers.image.source="https://github.com/saldestechnology/ml-electro-mlops" \
+      org.opencontainers.image.revision=${GIT_SHA}
+# Rootless podman maps container root to the unprivileged host user.
+CMD ["python", "-m", "pricefc", "--help"]

@@ -1,0 +1,13 @@
+# One pod per environment (placeholders filled by deploy/vps/deploy.sh from deploy.env).
+# Containers share the pod's localhost; ports are published on the VPS loopback only and are
+# reached through an SSH tunnel.
+[Unit]
+Description=pricefc @ENV@ pod
+
+[Pod]
+PodName=pricefc
+PublishPort=127.0.0.1:@MLFLOW_PORT@:5000
+PublishPort=127.0.0.1:@PREFECT_PORT@:4200
+
+[Install]
+WantedBy=default.target

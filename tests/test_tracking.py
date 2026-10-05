@@ -31,3 +31,10 @@ def test_missing_tags_rejected() -> None:
     cfg = load_config(Path("configs/base.yaml"))
     with pytest.raises(ValueError, match="missing required"), start_run("training", {}, cfg):
         pass
+
+
+def test_git_sha_baked_into_image_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pricefc.lineage import git_info
+
+    monkeypatch.setenv("PRICEFC_GIT_SHA", "abc123")
+    assert git_info() == ("abc123", False)

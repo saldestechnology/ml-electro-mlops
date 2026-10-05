@@ -29,13 +29,16 @@ dependencies = [
 local-mac = []
 gpu-cuda = []
 # Foundation models (M5); optional so CI and the base install stay free of torch.
-# jax/scikit-learn: TimesFM 2.5 covariates (XReg); the upstream "xreg" extra pins jax[cuda].
 timesfm = [
     "timesfm[torch]==3.0.2",
+    "torch>=2.4",  # direct, so the Linux CPU-only index in [tool.uv.sources] applies
     "mlx>=0.32; sys_platform == 'darwin'",  # TimesFM 3.0 Apple-silicon backend
-    "jax>=0.7",
-    "scikit-learn>=1.5",
 ]
+# TimesFM 2.5 covariates (XReg) need jax + scikit-learn (upstream "xreg" pins jax[cuda]).
+# Research only: the deployable models do not use XReg, so the serving image omits it.
+timesfm-xreg = ["pricefc[timesfm]", "jax>=0.7", "scikit-learn>=1.5"]
+# Scheduling and serving on the VPS (M6).
+serve = ["prefect>=3.8"]
 
 [project.scripts]
 pricefc = "pricefc.cli:app"
@@ -72,3 +75,12 @@ files = ["src"]
 testpaths = ["tests"]
 addopts = "-ra -m 'not live'"
 markers = ["live: calls real external APIs; run with `make test-live`"]
+
+# Linux (VPS, containers): CPU-only torch wheels instead of the default CUDA build (~2 GB).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

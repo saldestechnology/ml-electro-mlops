@@ -353,6 +353,14 @@ def tune_cmd(
 
 
 @app.command()
+def serve() -> None:
+    """Run the scheduled Prefect deployments (VPS worker; needs the `serve` extra)."""
+    from pricefc.flows.daily import serve as serve_flows
+
+    serve_flows()
+
+
+@app.command()
 def snapshots(config: Path = CONFIG_OPT) -> None:
     """List raw snapshots with row counts and validation status."""
     import json

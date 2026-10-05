@@ -1,0 +1,15 @@
+.git
+.venv
+data
+mlruns
+mlflow.db
+optuna.db
+docs
+tests
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.hypothesis
+.env
+.env.*

@@ -1,0 +1,22 @@
+[Unit]
+Description=pricefc @ENV@ flow worker (scheduled ingest, forecast, scoring)
+After=pricefc-prefect.service pricefc-mlflow.service
+Requires=pricefc-prefect.service
+
+[Container]
+Image=localhost/pricefc:current
+Pod=pricefc.pod
+ContainerName=pricefc-worker
+Volume=%h/pricefc/data:/data
+EnvironmentFile=%h/.config/pricefc/secrets.env
+Environment=PRICEFC_ENV=@ENV@ PRICEFC_ENV_CONFIG=configs/envs/@ENV@.yaml PREFECT_API_URL=http://localhost:4200/api
+Environment="PRICEFC_CRON_MORNING=@CRON_MORNING@" "PRICEFC_CRON_AFTERNOON=@CRON_AFTERNOON@"
+Exec=python -m pricefc serve
+
+[Service]
+# The Prefect server may still be starting; retry instead of failing the unit.
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

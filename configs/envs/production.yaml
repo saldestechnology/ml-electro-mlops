@@ -1,0 +1,11 @@
+# Deployment overlay (production), merged over configs/base.yaml when PRICEFC_ENV_CONFIG points here.
+# Paths are inside the container; /data is the environment's volume on the VPS.
+zones: [SE1, SE2, SE3, SE4]
+paths:
+  data_root: /data
+  raw: /data/raw
+  datasets: /data/datasets
+mlflow:
+  tracking_uri: http://localhost:5000   # same pod
+  artifact_root: "mlflow-artifacts:"    # stored by the server under /data/mlflow
+compute_env: vps-production

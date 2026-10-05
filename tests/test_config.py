@@ -35,3 +35,14 @@ def test_config_hash_stable_and_sensitive() -> None:
 def test_invalid_config_rejected(override: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         load_config(BASE, override)
+
+
+def test_env_overlay_is_merged(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pricefc.config import ENV_CONFIG_VAR
+
+    monkeypatch.setenv(ENV_CONFIG_VAR, "configs/envs/production.yaml")
+    cfg = load_config(Path("configs/base.yaml"))
+    assert cfg.zones == ["SE1", "SE2", "SE3", "SE4"]
+    assert str(cfg.paths.raw) == "/data/raw"
+    assert cfg.mlflow.tracking_uri == "http://localhost:5000"
+    assert cfg.timezone == "Europe/Stockholm"  # untouched keys come from base
