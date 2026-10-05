@@ -3,6 +3,10 @@
 Endpoints:
 - historical_forecast: stitched first hours of successive runs (training history).
 - previous_runs: variables at fixed lead days (`{var}_previous_day{N}`), for honest backtests.
+- single_runs: individual model runs. Used live to rebuild exactly the values Previous Runs
+  will later report at a fixed lead (`{var}_previous_day{N}` at hour T comes from the run
+  initialised at floor(T - N days) on the run grid), since for future hours the Previous Runs
+  API substitutes the latest run.
 - forecast: live forecast, archived as issued.
 """
 
@@ -10,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import pandas as pd
 import requests
@@ -19,7 +23,8 @@ from pricefc.config import Location, OpenMeteoConfig
 from pricefc.ingest.throttle import RateLimiter, RetryableError, with_retries
 
 SOURCE = "open_meteo"
-ENDPOINTS = ("historical_forecast", "previous_runs", "forecast")
+Endpoint = Literal["historical_forecast", "previous_runs", "single_runs", "forecast"]
+ENDPOINTS: tuple[Endpoint, ...] = get_args(Endpoint)
 
 
 @dataclass
@@ -50,6 +55,12 @@ def year_chunks(start: date, end: date) -> list[tuple[date, date]]:
     return chunks
 
 
+def lead_run(t: pd.Timestamp, lead_days: int, interval_hours: int) -> pd.Timestamp:
+    """Initialisation time of the run whose value Previous Runs reports for hour `t` at
+    `lead_days` (the latest run at least `lead_days` days before `t`)."""
+    return (t - pd.Timedelta(days=lead_days)).floor(f"{interval_hours}h")
+
+
 def weather_source_tag(endpoint: str, model: str) -> str:
     """Value for the `weather_source` MLflow tag."""
     return f"open-meteo:{endpoint}:{model}"
@@ -66,19 +77,20 @@ class OpenMeteoClient:
         self.session = session or requests.Session()
         self.limiter = limiter or RateLimiter(cfg.min_interval_s)
 
-    def hourly_variables(self, endpoint: str) -> list[str]:
-        if endpoint == "previous_runs":
-            leads = self.cfg.endpoints["previous_runs"].lead_days
+    def hourly_variables(self, endpoint: Endpoint) -> list[str]:
+        if endpoint in ("previous_runs", "single_runs"):
+            leads = self.cfg.endpoints[endpoint].lead_days
             if not leads:
-                raise ValueError("previous_runs requires lead_days")
+                raise ValueError(f"{endpoint} requires lead_days")
             return [f"{v}_previous_day{n}" for n in leads for v in self.cfg.variables]
         return list(self.cfg.variables)
 
-    def base_params(self, endpoint: str, loc: Location) -> dict[str, Any]:
+    def base_params(self, endpoint: Endpoint, loc: Location) -> dict[str, Any]:
+        variables = self.cfg.variables if endpoint == "single_runs" else None
         return {
             "latitude": loc.lat,
             "longitude": loc.lon,
-            "hourly": ",".join(self.hourly_variables(endpoint)),
+            "hourly": ",".join(variables or self.hourly_variables(endpoint)),
             "models": self.cfg.model,
             "timezone": "GMT",
             "timeformat": "unixtime",
@@ -157,6 +169,70 @@ class OpenMeteoClient:
                 **params,
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
+                "url": ep.url,
+            },
+            chunks=chunks,
+        )
+
+    def fetch_lead_runs(self, loc: Location, start: date, end: date) -> WeatherPull:
+        """Fixed-lead values for the inclusive UTC date range, from the runs themselves.
+
+        Same columns as `previous_runs` (`{var}_previous_day{N}`). Hours whose run is not
+        published yet stay null and are listed in the chunks, so validation fails loudly.
+        """
+        ep = self.cfg.endpoints["single_runs"]
+        if not ep.lead_days or ep.run_interval_hours is None:
+            raise ValueError("single_runs requires lead_days and run_interval_hours")
+        hours = pd.date_range(
+            pd.Timestamp(start, tz="UTC"),
+            pd.Timestamp(end + timedelta(days=1), tz="UTC"),
+            freq="h",
+            inclusive="left",
+        )
+        params = self.base_params("single_runs", loc)
+        out = pd.DataFrame({"timestamp": hours})
+        chunks: list[dict[str, Any]] = []
+        for lead in ep.lead_days:
+            cols = {v: f"{v}_previous_day{lead}" for v in self.cfg.variables}
+            runs = pd.DatetimeIndex([lead_run(t, lead, ep.run_interval_hours) for t in hours])
+            parts = []
+            for run in runs.unique():
+                targets = hours[runs == run]
+                days = (targets.max().normalize() - run.normalize()).days + 1
+                p = {**params, "run": run.strftime("%Y-%m-%dT%H:%M"), "forecast_days": days}
+                try:
+                    body = self._get(ep.url, p)
+                except RuntimeError as e:
+                    if "not available" not in str(e):
+                        raise
+                    chunks.append({"lead_days": lead, "run": p["run"], "available": False})
+                    continue
+                frame = self.parse_hourly(body, list(cols)).set_index("timestamp")
+                parts.append(frame.reindex(targets).rename(columns=cols))
+                chunks.append(
+                    {
+                        "lead_days": lead,
+                        "run": p["run"],
+                        "available": True,
+                        "hours": len(targets),
+                        **self._response_meta(body),
+                    }
+                )
+            lead_frame = pd.concat(parts) if parts else pd.DataFrame(columns=list(cols.values()))
+            lead_frame = lead_frame.reindex(hours).astype("float64")
+            out = out.join(lead_frame, on="timestamp")
+        return WeatherPull(
+            endpoint="single_runs",
+            location=loc,
+            data=out,
+            requested_start=hours[0],
+            requested_end=hours[-1] + pd.Timedelta(hours=1),
+            query={
+                **params,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "lead_days": list(ep.lead_days),
+                "run_interval_hours": ep.run_interval_hours,
                 "url": ep.url,
             },
             chunks=chunks,

@@ -19,7 +19,7 @@ from pricefc.validate.schemas import ValidationReport, validate_series
 from pricefc.validate.specs import entsoe_spec, weather_spec
 
 log = structlog.get_logger(__name__)
-WeatherEndpoint = Literal["historical_forecast", "previous_runs", "forecast"]
+WeatherEndpoint = Literal["historical_forecast", "previous_runs", "single_runs", "forecast"]
 
 
 @dataclass
@@ -56,6 +56,10 @@ def ingest_weather(
     for loc in locations:
         if endpoint == "forecast":
             pull = client.fetch_forecast(loc)
+        elif endpoint == "single_runs":
+            # Default: today and tomorrow (UTC), i.e. the hours a forecast origin today needs.
+            today = now_utc().date()
+            pull = client.fetch_lead_runs(loc, start or today, end or today + timedelta(days=1))
         else:
             s = start or ep_cfg.start
             if s is None:

@@ -326,7 +326,21 @@
   ~0.7 GB.
 - **First staging run** (2026-10-05): ingest flow completed; 55 snapshots valid; MLflow runs tagged
   with the image's git SHA (`PRICEFC_GIT_SHA`, clean) and `compute_env=vps-staging`.
-- **Open**: live weather for D+1. Open-Meteo Previous Runs returns `previous_day2` equal to the
-  latest run for some future hours (7 of 24 for D+1 on 2026-10-05); the forecast flow must
-  reproduce the backtest's day-2 lead exactly or flag the difference. To resolve before the
-  forecast flow goes live.
+- **Live weather for D+1 (resolved, see next entry)**: Previous Runs substitutes the latest run
+  for future hours, so it cannot supply live day-2 features.
+
+## 2026-10-05 — Live day-2 weather from the runs themselves
+- **Rule, verified**: Open-Meteo `{var}_previous_day2` at hour T is the ECMWF IFS run
+  initialised at floor_6h(T - 48h) (lead 48-53 h). Checked against the Single Runs API for
+  2 locations x 114 hours x all 8 variables: identical to the last digit. For hours whose run is
+  not written yet (future hours), Previous Runs returns whatever run it holds instead (in the
+  evening probe, the last written run at lead 54-63 h), which is why 7 of 24 D+1 hours did not
+  match this morning.
+- **Live features**: new `single_runs` endpoint (`ingest weather single_runs`, default today and
+  tomorrow UTC) fetches exactly those runs and stores them with the Previous Runs column names.
+  The true-lead loader uses them where present and the Previous Runs archive elsewhere
+  (`live_endpoint` in `configs/features.yaml`). An unpublished run leaves nulls and fails
+  validation, so a forecast never silently uses a different lead. All runs a D+1 forecast at
+  09:00 needs are initialised by D-1 18Z, ~13 h before the origin.
+- **Parity check**: once Previous Runs has written those hours, the stored live values can be
+  compared with the archive (planned in the score flow).

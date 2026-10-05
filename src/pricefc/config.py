@@ -113,6 +113,7 @@ class OpenMeteoEndpoint(_Strict):
     start: date | None = None
     lead_days: list[int] = Field(default_factory=list)
     forecast_days: int | None = None
+    run_interval_hours: int | None = None  # single_runs: spacing of model initialisations
     max_null_frac: float = Field(default=0.0, ge=0, le=1)
 
 
@@ -123,7 +124,10 @@ class OpenMeteoConfig(_Strict):
     min_interval_s: float = Field(ge=0)
     max_retries: int = Field(ge=0)
     timeout_s: float = Field(gt=0)
-    endpoints: dict[Literal["historical_forecast", "previous_runs", "forecast"], OpenMeteoEndpoint]
+    endpoints: dict[
+        Literal["historical_forecast", "previous_runs", "single_runs", "forecast"],
+        OpenMeteoEndpoint,
+    ]
 
 
 EntsoeDataset = Literal[
@@ -200,6 +204,8 @@ class WeatherSourceConfig(_Strict):
     endpoint: Literal["historical_forecast", "previous_runs"]
     lead_days: int = Field(ge=1, le=7)
     column_suffix: str
+    # Live reconstruction of the same lead for hours the archive does not hold yet.
+    live_endpoint: Literal["single_runs"] | None = None
 
 
 class DatasetWeatherConfig(_Strict):

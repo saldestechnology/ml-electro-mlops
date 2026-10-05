@@ -86,7 +86,9 @@ def _finish(
 
 @ingest_app.command("weather")
 def ingest_weather_cmd(
-    endpoint: str = typer.Argument(..., help="historical_forecast | previous_runs | forecast"),
+    endpoint: str = typer.Argument(
+        ..., help="historical_forecast | previous_runs | single_runs | forecast"
+    ),
     zone: list[str] | None = ZONE_OPT,
     start: datetime | None = START_OPT,
     end: datetime | None = END_OPT,
@@ -97,7 +99,7 @@ def ingest_weather_cmd(
     """Pull Open-Meteo weather for every configured location of the zone(s)."""
     from pricefc.config import load_features_config, load_ingest_config
     from pricefc.ingest.openmeteo import ENDPOINTS, weather_source_tag
-    from pricefc.ingest.run import WeatherEndpoint, ingest_weather, locations_for
+    from pricefc.ingest.run import ingest_weather, locations_for
 
     if endpoint not in ENDPOINTS:
         raise typer.BadParameter(f"endpoint must be one of {ENDPOINTS}")
@@ -105,8 +107,7 @@ def ingest_weather_cmd(
     ing = load_ingest_config(ingest_config)
     zones = zone or list(base.zones)
     locs = locations_for(load_features_config(features_config), zones)
-    ep = cast("WeatherEndpoint", endpoint)
-    results = ingest_weather(base, ing, locs, ep, _date(start), _date(end))
+    results = ingest_weather(base, ing, locs, endpoint, _date(start), _date(end))
     _finish(
         results,
         f"weather-{endpoint}",

@@ -29,6 +29,15 @@ open_meteo:
       # The archive has whole-day holes (e.g. 2026-03-26..2026-05-06, different per variable and
       # lead). Tolerated here and reported as null_counts; handled explicitly in dataset build.
       max_null_frac: 0.10
+    single_runs:          # live: the exact runs Previous Runs will later report at `lead_days`
+      # Verified 2026-10-05: `{var}_previous_day2` at hour T is the run initialised at
+      # floor_6h(T - 48h), for every variable and hour. For future hours the Previous Runs API
+      # substitutes the latest run until that slot is written, so live features are rebuilt
+      # from the runs themselves (see docs/decisions.md).
+      url: https://single-runs-api.open-meteo.com/v1/forecast
+      lead_days: [2]
+      run_interval_hours: 6
+      max_null_frac: 0.0
     forecast:             # live forecasting; archived as issued
       url: https://api.open-meteo.com/v1/forecast
       forecast_days: 3

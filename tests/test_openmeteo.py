@@ -124,3 +124,46 @@ def test_ingest_weather_writes_valid_snapshot_on_dst_day(tmp_path: Path) -> None
     assert m["weather_source"] == "open-meteo:historical_forecast:ecmwf_ifs"
     assert m["validation"]["passed"] and m["row_count"] == 72
     assert "CC BY 4.0" in m["attribution"]
+
+
+def test_lead_run_matches_previous_runs_rule() -> None:
+    # Verified against the live API on 2026-10-05: previous_day2 at T = run at floor_6h(T - 48h).
+    from pricefc.ingest.openmeteo import lead_run
+
+    t = pd.Timestamp
+    assert lead_run(t("2026-10-06T05:00Z"), 2, 6) == t("2026-10-04T00:00Z")
+    assert lead_run(t("2026-10-06T06:00Z"), 2, 6) == t("2026-10-04T06:00Z")
+    assert lead_run(t("2026-10-06T23:00Z"), 2, 6) == t("2026-10-04T18:00Z")
+
+
+def _run_body(run: str, days: int) -> dict[str, Any]:
+    """Every value encodes the run's hour, so the test can see which run filled each hour."""
+    start = pd.Timestamp(run[:10], tz="UTC")
+    times = pd.date_range(start, periods=24 * days, freq="h")
+    value = float(pd.Timestamp(run).hour)
+    hourly: dict[str, Any] = {"time": [int(x.timestamp()) for x in times]}
+    hourly.update({v: [value] * len(times) for v in CFG.variables})
+    return {"latitude": 59.3, "longitude": 18.1, "hourly": hourly}
+
+
+def test_fetch_lead_runs_takes_each_hour_from_its_own_run() -> None:
+    runs = ["2026-10-04T00:00", "2026-10-04T06:00", "2026-10-04T12:00", "2026-10-04T18:00"]
+    c, session = client([FakeResponse(200, _run_body(r, 3)) for r in runs])
+    pull = c.fetch_lead_runs(STOCKHOLM, date(2026, 10, 6), date(2026, 10, 6))
+    assert [call["run"] for call in session.calls] == runs
+    assert all(call["url"].startswith("https://single-runs-api") for call in session.calls)
+    col = pull.data.set_index("timestamp")["temperature_2m_previous_day2"]
+    assert list(col.to_numpy()) == [0.0] * 6 + [6.0] * 6 + [12.0] * 6 + [18.0] * 6
+    assert set(pull.data.columns) == {"timestamp", *c.hourly_variables("single_runs")}
+
+
+def test_fetch_lead_runs_leaves_unpublished_runs_null() -> None:
+    missing = FakeResponse(
+        400, {"error": True, "reason": "The requested model run is not available."}
+    )
+    responses = [FakeResponse(200, _run_body(f"2026-10-04T{h:02d}:00", 3)) for h in (0, 6, 12)]
+    c, _ = client([*responses, missing])
+    pull = c.fetch_lead_runs(STOCKHOLM, date(2026, 10, 6), date(2026, 10, 6))
+    col = pull.data["temperature_2m_previous_day2"]
+    assert col.isna().sum() == 6 and col.iloc[:18].notna().all()
+    assert pull.chunks[-1] == {"lead_days": 2, "run": "2026-10-04T18:00", "available": False}

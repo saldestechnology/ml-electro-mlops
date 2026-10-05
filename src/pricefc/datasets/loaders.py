@@ -63,6 +63,16 @@ def load_weather(
     if missing:
         raise KeyError(f"{dataset}/{loc.name} lacks columns {missing}")
     frame = raw.set_index("timestamp")[list(cols)].rename(columns=cols).astype("float64")
+    if src.live_endpoint:
+        # The same runs fetched directly (identical values where both exist; see
+        # ingest/openmeteo.py). They cover hours the archive does not hold yet.
+        live, live_snaps = load_latest(
+            raw_root, "open_meteo", f"{src.live_endpoint}__{wcfg.model}", loc.name
+        )
+        if not live.empty:
+            live_frame = live.set_index("timestamp")[list(cols)].rename(columns=cols)
+            frame = live_frame.astype("float64").combine_first(frame)
+            snaps = [*snaps, *live_snaps]
     # Preceding-hour variables: the value labelled T covers (T-1h, T]; relabel to T-1h so a
     # row describes the hour that starts at its timestamp, like prices.
     shifted = [v for v in variables if v in wcfg.preceding_hour_variables]

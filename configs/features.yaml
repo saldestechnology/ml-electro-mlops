@@ -51,7 +51,12 @@ dataset:
       # unknown; it is *treated* as a 2-day-lead forecast (optimistic, documented).
       stitched: {endpoint: historical_forecast, lead_days: 2, column_suffix: ""}
       # Backtests: genuine 2-day lead. Day-1 lead would leak for most D+1 hours.
-      true_lead: {endpoint: previous_runs, lead_days: 2, column_suffix: "_previous_day2"}
+      # Live: hours not yet in the archive come from the same runs via `single_runs`.
+      true_lead:
+        endpoint: previous_runs
+        lead_days: 2
+        column_suffix: "_previous_day2"
+        live_endpoint: single_runs
   leakage_audit:
     n_origins: 25
     seed: 42
