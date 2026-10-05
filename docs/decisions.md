@@ -293,3 +293,15 @@
   leakage audits clean. To be registered in M6.
 - **Fine-tuning still deferred**: the remaining gap to 3.0+cov is 0.4-0.7 EUR/MWh. A cheaper
   next lever is the LightGBM night-hour feature (last published hours of day D).
+
+## 2026-10-05 — Splits, contamination and test reuse
+- **Splits**: test = 3 Oct 2025 - 2 Oct 2026 (true-lead weather); validation = 4 HPO folds of
+  91 days ending 2 Oct 2025 (LightGBM only); training = expanding from Nov 2021 to each origin;
+  recalibration offsets and ensemble weights are fitted online from published days only.
+- **Pretraining contamination checked**: TimesFM 2.5 and 3.0 model cards list GiftEvalPretrain,
+  Wikipedia pageviews (to Nov 2023), Google Trends (to end 2022) and synthetic data, so neither
+  can have seen test-year prices, although 3.0 was released inside the test year.
+- **Test reuse acknowledged**: recalibration window, crisis years, TimesFM variants and ensemble
+  weighting were chosen after seeing test-year scores, so the winners' scores are mildly
+  optimistic (choices differ by 0.02-0.1 EUR/MWh vs headline gains of 0.5-1.4). Design is now
+  frozen; live forecasts from M6 onwards are the clean hold-out.

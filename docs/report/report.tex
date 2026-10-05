@@ -558,6 +558,43 @@ By the promotion criteria, the hourly expanding-window ensemble of recalibrated 
 TimesFM~2.5 replaces LightGBM as the champion candidate in every zone.
 
 %------------------------------------------------------------------------------
+\section{Data splits, leakage and contamination}
+\label{sec:splits}
+
+\paragraph{Splits.} There is no single static split; each role uses different data:
+\begin{center}\small
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4.6cm}X}
+\toprule
+Role & Period & Notes\\
+\midrule
+Test & 3 Oct 2025 -- 2 Oct 2026 (365 origins) & True day-2 lead weather, as issued. All reported scores.\\
+Validation (HPO) & 4 folds of 91 days, 4 Oct 2024 -- 2 Oct 2025 & LightGBM tuning only; ends before the test year (asserted).\\
+Training & Expanding from Nov 2021 to each origin & Rows published by the origin; grows into the test year as a live system would.\\
+Online fitting & Inside the test year, causal & Recalibration offsets and ensemble weights from the model's own past forecasts of published days.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\paragraph{Leakage (future information in a forecast).} Guarded by the availability rules, the
+leakage audit on every dataset build, the harness removing the target before \code{predict},
+training rows limited to published days, tuning folds before the test year, and tests that
+fail when the recalibration or ensemble would use unpublished days. No leakage is known.
+
+\paragraph{Pretraining contamination.} Specific to pretrained models: their training data is
+not under our control, and TimesFM~3.0 was released inside our test year. Both model cards list
+GiftEvalPretrain, Wikipedia pageviews (to Nov 2023), Google Trends (to end of 2022) and
+synthetic data, none of which can contain Swedish prices from October 2025 onwards. The
+TimesFM results are therefore not explained by memorised test data.
+
+\paragraph{Test-set reuse (selection, not leakage).} Several design choices were made after
+seeing test-year scores: the recalibration window, keeping the crisis years, dropping TimesFM~2.5
+with XReg covariates, the TimesFM variants, and the ensemble weighting. This affects pretrained
+and self-trained models alike and makes the winners' scores mildly optimistic. The choices
+separated variants by about 0.02--0.1~EUR/MWh, against headline gains of 0.5--1.4~EUR/MWh, and
+the main conclusions hold for every variant tried. With all choices now frozen, the live
+forecasts from M6 onwards form a clean hold-out.
+
+%------------------------------------------------------------------------------
 \section{Issues found and fixed along the way}
 
 {\small\noindent
