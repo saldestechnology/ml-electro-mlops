@@ -153,7 +153,7 @@ def run_zone(
     outcomes: dict[str, ModelOutcome] = {}
     for spec in models or cfg.models:
         name, params, train_start = resolve_spec(spec, model_params, cfg.train_start)
-        model = build_model(name, base.quantiles, params)
+        model = _build(name, params, zone, base, model_params)
         model.name = spec
         res = run_backtest(
             model, train_df, eval_df, origins, base.quantiles, train_start=train_start
@@ -193,6 +193,28 @@ def run_zone(
     if log_to_mlflow:
         _log_compare_run(base, cfg, zone, table, outcomes, eval_ds, dev)
     return outcomes, table
+
+
+def _build(
+    name: str,
+    params: dict[str, Any],
+    zone: str,
+    base: BaseConfig,
+    model_params: dict[str, dict[str, Any]],
+) -> Any:
+    if not name.startswith("ensemble"):
+        return build_model(name, base.quantiles, params)
+    from pricefc.models.calibration import RecalibratedForecaster
+    from pricefc.models.ensemble import build_ensemble
+
+    params = dict(params)
+    window = params.pop("calibration_window_days", None)
+    ens = build_ensemble(
+        name, params, zone=zone, quantiles=base.quantiles, model_params=model_params
+    )
+    if window:
+        return RecalibratedForecaster(ens, base.quantiles, window_days=int(window))
+    return ens
 
 
 # --- MLflow ----------------------------------------------------------------------------------
@@ -268,8 +290,11 @@ def _log_model_run(
             o.slices.to_csv(t / "slice_metrics.csv", index=False)
             o.daily.to_csv(t / "daily_losses.csv")
             o.result.fit_log().to_csv(t / "fit_log.csv", index=False)
-            if getattr(model, "calibration_log", None):
-                pd.DataFrame(model.calibration_log).to_csv(t / "calibration_log.csv", index=False)
+            for log_name in ("calibration_log", "weight_log"):
+                if getattr(model, log_name, None):
+                    pd.DataFrame(getattr(model, log_name)).to_csv(
+                        t / f"{log_name}.csv", index=False
+                    )
             with contextlib.suppress(AttributeError):  # not every model has importances
                 model.feature_importance().to_csv(t / "feature_importance_gain.csv")
             mlflow.log_artifacts(tmp)
