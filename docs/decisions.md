@@ -285,7 +285,7 @@
   morning ramp onwards; stable over the year. Per-hour weighting is what matters (global
   weights are no better than equal).
 - **Gap to the benchmark**: the deployable ensemble closes 30-65% of the gap between LightGBM
-  and TimesFM 3.0+cov (SE3 65%, SE4 62%, SE1 45%, SE2 28%). The research ensemble with 3.0
+  and TimesFM 3.0+cov (SE3 65%, SE4 61%, SE1 45%, SE2 28%). The research ensemble with 3.0
   is on par with or better than 3.0 alone (not deployable).
 - **Champion candidates (M8)**: `ensemble_hourly_exp` (LightGBM+recal and TimesFM 2.5, both
   deployable) in every zone: better than the M4 candidate with CI excluding zero, DM

@@ -40,6 +40,7 @@ MODELS = {  # label -> run-name template
     "TimesFM 2.5": "{z}-timesfm25",
     "TimesFM 3.0": "{z}-timesfm3",
     "TimesFM 3.0+cov": "{z}-timesfm3_cov",
+    "Ensemble (deployable)": "{z}-ensemble_hourly_exp",
 }
 COLORS = {
     "Naive 7d": "#9e9e9e",
@@ -48,6 +49,7 @@ COLORS = {
     "TimesFM 2.5": "#2ca02c",
     "TimesFM 3.0": "#bcbd22",
     "TimesFM 3.0+cov": "#d62728",
+    "Ensemble (deployable)": "#9467bd",
 }
 
 
@@ -118,7 +120,7 @@ def fig_zone_scores() -> pd.DataFrame:
             rows.append({"zone": z, "model": label, "mean": ci.estimate, "lo": ci.lo, "hi": ci.hi})
     t = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(7, 3))
-    width = 0.13
+    width = 0.115
     for i, label in enumerate(MODELS):
         s = t[t.model == label]
         x = np.arange(len(ZONES)) + (i - (len(MODELS) - 1) / 2) * width
@@ -143,7 +145,13 @@ def fig_zone_scores() -> pd.DataFrame:
 def fig_hourly() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(7, 2.7), sharey=True)
     for ax, z in zip(axes, ["SE3", "SE4"], strict=True):
-        for label in ["MSTL+ETS", "LightGBM+recal", "TimesFM 2.5", "TimesFM 3.0+cov"]:
+        for label in [
+            "MSTL+ETS",
+            "LightGBM+recal",
+            "TimesFM 2.5",
+            "TimesFM 3.0+cov",
+            "Ensemble (deployable)",
+        ]:
             s = artifact(MODELS[label].format(z=z), "slice_metrics.csv")
             s = s[s.slice == "hour"].assign(h=lambda d: d.group.astype(int)).sort_values("h")
             ax.plot(s.h, s.pinball_mean, marker="o", ms=2, lw=1, color=COLORS[label], label=label)
@@ -243,6 +251,27 @@ def fig_hpo() -> None:
     save(fig, "hpo")
 
 
+def fig_weights() -> None:
+    fig, ax = plt.subplots(figsize=(4.6, 2.8))
+    for z, c in zip(ZONES, ["#6baed6", "#3182bd", "#08519c", "#e6550d"], strict=True):
+        w = artifact(MODELS["Ensemble (deployable)"].format(z=z), "weight_log.csv").iloc[-1]
+        ax.plot(
+            range(24),
+            [w[f"w_{h}_timesfm25"] for h in range(24)],
+            marker="o",
+            ms=2,
+            lw=1,
+            color=c,
+            label=z,
+        )
+    ax.set_xlabel("hour of delivery day (local)")
+    ax.set_ylabel("weight on TimesFM 2.5")
+    ax.set_xticks(range(0, 24, 3))
+    ax.set_ylim(0, 1)
+    ax.legend(frameon=False, ncol=2)
+    save(fig, "weights")
+
+
 if __name__ == "__main__":
     fig_prices()
     fig_weather_gap()
@@ -253,3 +282,4 @@ if __name__ == "__main__":
     fig_fan()
     fig_importance()
     fig_hpo()
+    fig_weights()

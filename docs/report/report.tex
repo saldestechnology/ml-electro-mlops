@@ -25,7 +25,7 @@
 \newcommand{\best}[1]{\textbf{#1}}
 
 \title{Probabilistic Day-Ahead Electricity Price Forecasting\\for the Swedish Bidding Zones SE1--SE4\\[4pt]
-\large Process, decisions and results: milestones M0--M5}
+\large Process, decisions and results: milestones M0--M5 and M8}
 \author{Pipeline \code{pricefc} \quad\textperiodcentered\quad
 \href{https://github.com/saldestechnology/ml-electro-mlops}{saldestechnology/ml-electro-mlops}}
 \date{5 October 2026}
@@ -47,7 +47,10 @@ pretrained foundation model TimesFM~3.0 with weather and calendar covariates is 
 (a further 12--20\% over LightGBM, significant in every zone), but its weights are licensed for
 non-commercial use only, so it serves as a benchmark rather than a deployable model. The
 deployable TimesFM~2.5 is weaker than LightGBM overall, yet makes complementary errors (it halves
-the night-hour error), which motivates the ensemble milestone (M8).
+the night-hour error). An ensemble of the two deployable models, with weights per hour of the
+delivery day learnt only from past forecasts, improves on LightGBM by a further 5--9\% in every
+zone (significant everywhere), closing 28--65\% of the gap to the non-deployable benchmark. It is
+the champion candidate.
 \end{abstract}
 
 \tableofcontents
@@ -121,9 +124,9 @@ dataset, key and pull time, with a manifest (request, row
 counts, hashes, validation result, git SHA). Snapshots are never overwritten; invalid ones are kept
 and marked, so the record of what an API returned is preserved.
 \item \textbf{Quality gates.} GitHub Actions runs \code{ruff}, \code{mypy --strict} and
-\code{pytest} (116 offline tests, including Hypothesis property tests) on every push; live API
+\code{pytest} (124 offline tests, including Hypothesis property tests) on every push; live API
 tests are opt-in.
-\item \textbf{Scale.} 29 commits, about 5{,}100 lines of library code and 1{,}900 lines of tests.
+\item \textbf{Scale.} 34 commits, about 5{,}400 lines of library code and 2{,}000 lines of tests.
 \end{itemize}
 
 %------------------------------------------------------------------------------
@@ -484,6 +487,77 @@ some slices), but combining it with LightGBM costs nothing and should be tried f
 TimesFM~3.0 remains after the ensemble.
 
 %------------------------------------------------------------------------------
+\section{Ensemble (M8)}
+
+\subsection{Design}
+The ensemble is one more \code{Forecaster} in the harness, so it is evaluated under exactly the
+same conditions as its members. At each origin its members are refit on their own cadence and
+forecast as usual; the ensemble forecast is a convex combination of their sorted quantiles,
+\begin{equation}
+\hat q^{\,\mathrm{ens}}_{\tau,t} = \sum_{k} w_{k,g(t)}\,\hat q^{(k)}_{\tau,t}, \qquad
+w_{\cdot,g} \in \Delta^{K-1},
+\end{equation}
+where $g(t)$ is the weight group of target hour $t$: a single group (\emph{global}) or the local
+hour of the delivery day (\emph{hourly}). Weights are chosen on a simplex grid (step 0.05) by
+minimising mean pinball loss over the members' \emph{own past forecasts} of days that are
+published by the origin, over a trailing 56-day or an expanding window. Until 14 days of
+history exist the weights are equal. As with recalibration, realised prices reach the ensemble
+only through the harness's published-before-origin training rows, so it cannot see the future.
+The deployable ensemble combines the recalibrated LightGBM and TimesFM~2.5; a research variant
+adds TimesFM~3.0 with covariates and is tagged non-deployable automatically, because an ensemble
+is deployable only if all its members are.
+
+\subsection{Results}
+
+\begin{table}[h]
+\centering\small
+\caption{Ensembles, 365 origins per zone: mean pinball loss (EUR/MWh); paired difference of the
+hourly expanding-window ensemble to LightGBM with 95\% block-bootstrap CI (DM $p<0.001$ in every
+zone). The research ensemble includes TimesFM~3.0 and is not deployable.}
+\label{tab:ensemble}
+\footnotesize\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lcccccc|cc}
+\toprule
+& & \multicolumn{3}{c}{deployable ensemble} & & & \multicolumn{2}{c}{research only}\\
+\cmidrule(lr){3-5}\cmidrule(lr){8-9}
+Zone & LGBM+recal & equal & hourly 56d & hourly exp. & $\Delta$ [95\% CI] & Cov.\ 80/90 & ens.\ +3.0 & 3.0+cov\\
+\midrule
+SE1 & 5.053 & 4.701 & 4.630 & \best{4.608} & $-0.45$ [$-0.61$, $-0.29$] & 79.5/88.8 & 4.086 & 4.054\\
+SE2 & 4.788 & 4.690 & 4.552 & \best{4.528} & $-0.26$ [$-0.35$, $-0.17$] & 79.8/89.3 & 3.883 & 3.866\\
+SE3 & 5.727 & 5.430 & 5.273 & \best{5.248} & $-0.48$ [$-0.60$, $-0.36$] & 81.6/90.1 & 4.873 & 4.989\\
+SE4 & 6.920 & 6.581 & 6.408 & \best{6.390} & $-0.53$ [$-0.67$, $-0.38$] & 82.2/90.4 & 5.964 & 6.059\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+\item \textbf{Per-hour weights are what matters.} Equal weights already help (except in SE2,
+where the gain is not significant), global weights add nothing over equal weights, and hourly
+weights roughly double the gain. The expanding window is marginally better than 56 days.
+\item \textbf{The learnt weights are interpretable and stable} (Figure~\ref{fig:weights}):
+TimesFM~2.5 receives 0.7--1.0 in hours 0--5, where it carries the last published price level
+forward, and 0.05--0.6 from hour 7 onwards, where LightGBM's weather drivers dominate (SE1 keeps the
+most TimesFM weight). In SE3 the mid-year and final weights differ by at most 0.1.
+\item \textbf{No degradation where it matters.} Spike days improve in every zone (by 1--9\%);
+the only worse slice is SE1 negative-price hours (+6\%, a small slice). Interval coverage stays
+within 2.5 points of nominal.
+\item \textbf{Gap to the benchmark.} The deployable ensemble closes 65\% (SE3), 61\% (SE4),
+45\% (SE1) and 28\% (SE2) of the gap between LightGBM and TimesFM~3.0 with covariates. Adding
+TimesFM~3.0 to the ensemble matches or beats TimesFM~3.0 alone, but is not deployable.
+\end{itemize}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.6\linewidth]{weights}
+\caption{Learnt ensemble weight on TimesFM~2.5 by hour of the delivery day (final weights
+of the evaluation year; LightGBM receives the complement).}
+\label{fig:weights}
+\end{figure}
+
+By the promotion criteria, the hourly expanding-window ensemble of recalibrated LightGBM and
+TimesFM~2.5 replaces LightGBM as the champion candidate in every zone.
+
+%------------------------------------------------------------------------------
 \section{Issues found and fixed along the way}
 
 {\small\noindent
@@ -501,6 +575,7 @@ Model variants overwrote each other in comparisons & Keyed by full variant spec;
 Raw LightGBM over-confident on live weather & Rolling 28-day quantile recalibration.\\
 TimesFM clamped forecasts at zero & \code{infer\_is\_positive} disabled.\\
 LightGBM + torch OpenMP deadlock (macOS) & Torch limited to one thread.\\
+Ensemble member specs invalid as MLflow names & Sanitised; test against MLflow's validator.\\
 \bottomrule
 \end{tabularx}\par}
 
@@ -510,16 +585,18 @@ LightGBM + torch OpenMP deadlock (macOS) & Torch limited to one thread.\\
 \begin{enumerate}
 \item A leakage-audited, fully versioned pipeline produces calibrated quantile forecasts for all
 four zones, with every number in this report traceable to an MLflow run.
-\item The deployable champion candidate is the tuned, recalibrated LightGBM: 13--23\% better than
-MSTL and 49--58\% better than the seasonal naive reference, significant in every zone.
+\item The tuned, recalibrated LightGBM is 13--23\% better than MSTL and 49--58\% better than the
+seasonal naive reference, significant in every zone.
 \item TimesFM~3.0 with covariates shows a further 12--20\% of headroom, but only as a
 non-deployable benchmark.
-\item TimesFM~2.5 and LightGBM make complementary errors; the next step (M8) is an ensemble of the
-two deployable models, weighted per hour of day and fitted on past backtest forecasts only, to see
-how much of the gap to TimesFM~3.0 can be closed without licence restrictions.
+\item TimesFM~2.5 and LightGBM make complementary errors. Their hourly-weighted ensemble is the
+deployable champion candidate: a further 5--9\% better than LightGBM in every zone, closing
+28--65\% of the gap to TimesFM~3.0 without licence restrictions.
 \item A cheap LightGBM improvement follows from Figure~\ref{fig:hourly}: features describing the
 last published hours of day $D$ should fix its night-hour weakness.
-\item M6 will wrap the chosen model for the MLflow registry and serve the daily 09:00 forecast.
+\item M6 will wrap the ensemble (both members, weights and recalibration state) for the MLflow
+registry and serve the daily 09:00 forecast. Fine-tuning TimesFM~2.5 remains deferred: the
+remaining gap of 0.4--0.7~EUR/MWh does not yet justify GPU spend.
 \end{enumerate}
 
 %------------------------------------------------------------------------------
@@ -535,6 +612,7 @@ uv run python -m pricefc tune -z SE3          # Optuna, before eval year
 uv run python -m pricefc backtest run -z SE3 \
     -m mstl_ets -m "lightgbm_tuned_SE3@calibration=28" \
     -m timesfm25 -m timesfm3_cov
+uv run python -m pricefc backtest run -z SE3 -m ensemble_hourly_exp
 uv run python -m pricefc backtest compare <run ids> --reference mstl_ets
 uv run python docs/report/make_figures.py     # figures in this report
 \end{verbatim}
