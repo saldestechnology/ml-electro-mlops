@@ -258,3 +258,38 @@
   RunPod only if a clear gap to 3.0+cov remains, and only with owner approval of the cost.
 - 3.0+cov shows how much headroom exists (~15% over LightGBM); it is the benchmark the
   deployable stack should approach.
+
+## 2026-10-05 — M8 ensembles
+- **Design**: `EnsembleForecaster` is a `Forecaster` in the harness. Members refit on their own
+  cadence; the ensemble averages their sorted quantiles with convex weights chosen by mean
+  pinball on the members' *own past forecasts* of days published by the origin (same causal
+  pattern as recalibration). Simplex grid, step 0.05; equal weights until 14 days of history.
+  Schemes: equal, global, hourly (per local hour); trailing 56 days or expanding window.
+  Member forecasts are memoised per process so variants share the members' work.
+- **Bug found**: member specs (`@`, `=`) made MLflow param names invalid; the first SE3 run
+  crashed after one variant. Sanitised; test checks names against MLflow's validator.
+- **Results, 365 origins** (mean pinball; diff vs tuned LightGBM+recal, 95% CI; DM p<0.001
+  unless noted):
+
+  | zone | LGBM+recal | equal | hourly 56d | **hourly expanding** | diff [CI] | research (+3.0cov) | 3.0+cov |
+  |---|---|---|---|---|---|---|---|
+  | SE1 | 5.053 | 4.701 | 4.630 | **4.608** | -0.45 [-0.61, -0.29] | 4.086 | 4.054 |
+  | SE2 | 4.788 | 4.690 (p=0.16) | 4.552 | **4.528** | -0.26 [-0.35, -0.17] | 3.883 | 3.866 |
+  | SE3 | 5.727 | 5.430 | 5.273 | **5.248** | -0.48 [-0.60, -0.36] | 4.873 | 4.989 |
+  | SE4 | 6.920 | 6.581 | 6.408 | **6.390** | -0.53 [-0.67, -0.38] | 5.964 | 6.059 |
+
+  Coverage (hourly expanding) 79.5-82.2% / 88.8-90.4%; median bias unchanged (-1.6 to -4.3).
+  Spike days improve in every zone (-1% to -9%); only SE1 negative-price hours get worse
+  (+5.8%, small slice).
+- **Learned weights (SE3)**: TimesFM 2.5 gets 0.9-0.95 for hours 0-5 and 0.1-0.35 from the
+  morning ramp onwards; stable over the year. Per-hour weighting is what matters (global
+  weights are no better than equal).
+- **Gap to the benchmark**: the deployable ensemble closes 30-65% of the gap between LightGBM
+  and TimesFM 3.0+cov (SE3 65%, SE4 62%, SE1 45%, SE2 28%). The research ensemble with 3.0
+  is on par with or better than 3.0 alone (not deployable).
+- **Champion candidates (M8)**: `ensemble_hourly_exp` (LightGBM+recal and TimesFM 2.5, both
+  deployable) in every zone: better than the M4 candidate with CI excluding zero, DM
+  significant, coverage within 2.5 points of nominal, no degradation on spike days, members'
+  leakage audits clean. To be registered in M6.
+- **Fine-tuning still deferred**: the remaining gap to 3.0+cov is 0.4-0.7 EUR/MWh. A cheaper
+  next lever is the LightGBM night-hour feature (last published hours of day D).
