@@ -12,6 +12,7 @@ CONF="$HOME/.config/pricefc/deploy.env"   # ENV, MLFLOW_PORT, PREFECT_PORT, CRON
 UNITS="$HOME/.config/containers/systemd"
 CURRENT=localhost/pricefc:current
 PREVIOUS=localhost/pricefc:previous
+HEALTH_TIMEOUT=240   # seconds for MLflow, Prefect and the worker to come up
 
 # shellcheck source=/dev/null
 source "$CONF"
@@ -41,7 +42,7 @@ restart() {
 }
 
 healthy() {
-  local deadline=$((SECONDS + ${1:-240}))
+  local deadline=$((SECONDS + HEALTH_TIMEOUT))
   while ((SECONDS < deadline)); do
     if curl -fsS "http://127.0.0.1:$MLFLOW_PORT/health" >/dev/null 2>&1 \
       && curl -fsS "http://127.0.0.1:$PREFECT_PORT/api/health" >/dev/null 2>&1 \
@@ -84,6 +85,9 @@ case "${action:-}" in
     restart
     if healthy; then
       log "healthy: $(podman image inspect "$CURRENT" --format '{{index .Labels "org.opencontainers.image.revision"}}')"
+      # Keep this script in step with the deployed version (the image already runs as us).
+      podman run --rm --entrypoint cat "$CURRENT" /app/deploy/vps/deploy.sh > "$HOME/bin/deploy.new" \
+        && chmod 755 "$HOME/bin/deploy.new" && mv "$HOME/bin/deploy.new" "$HOME/bin/deploy"
       podman image prune -f >/dev/null || true
     else
       log "unhealthy after deploy; rolling back"
