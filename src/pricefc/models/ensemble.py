@@ -135,7 +135,8 @@ class EnsembleForecaster:
     def version_info(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for spec, m in zip(self.member_specs, self.members, strict=True):
-            out.update({f"{spec}.{k}": v for k, v in m.version_info().items()})
+            safe = spec.replace("@", "__").replace("=", "-")  # MLflow param-name rules
+            out.update({f"{safe}.{k}": v for k, v in m.version_info().items()})
         return out
 
     def run_tags(self) -> dict[str, str]:

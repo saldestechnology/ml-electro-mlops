@@ -155,3 +155,19 @@ def test_deployable_only_if_every_member_is() -> None:
     assert ensemble([ok, Fake(lambda h: 0.0)]).run_tags()["deployable"] == "true"
     tags = ensemble([ok, nc]).run_tags()
     assert tags["deployable"] == "false" and tags["model_licence"] == "apache-2.0,non-commercial"
+
+
+def test_logged_names_are_valid_mlflow_params() -> None:
+    from mlflow.utils.validation import _validate_param_name
+
+    class Versioned(Fake):
+        def version_info(self) -> dict[str, Any]:
+            return {"lib": "1.0"}
+
+    e = EnsembleForecaster(
+        [Versioned(lambda h: 0.0), Versioned(lambda h: 0.0)],  # type: ignore[list-item]
+        ["lightgbm_tuned_SE3@calibration=28", "timesfm25"],
+        QS,
+    )
+    for key in [*e.version_info(), *e.params()]:
+        _validate_param_name(key)
