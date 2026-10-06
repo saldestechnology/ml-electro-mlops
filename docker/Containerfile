@@ -2,8 +2,17 @@
 # commit, promoted unchanged from staging to production). CPU-only torch on Linux (pyproject).
 #   podman build -f docker/Containerfile -t pricefc .
 #
-# Single stage on purpose: the dependency layer (~2 GB) is stored once and shared by every
-# image built from the same uv.lock, so a code-only change is a small layer to push and pull.
+# The Python image is one stage on purpose: the dependency layer (~2 GB) is stored once and
+# shared by every image built from the same uv.lock, so a code-only change is a small layer to
+# push and pull. The dashboard is built in a throwaway Node stage; only its static files ship.
+
+FROM node:24-trixie-slim AS web
+RUN corepack enable
+WORKDIR /web
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web ./
+RUN pnpm build
 
 FROM python:3.12-slim-trixie
 # libgomp: LightGBM's OpenMP runtime. curl: container health checks. procps: ps/pgrep for debugging.
@@ -16,13 +25,14 @@ WORKDIR /app
 
 # Dependencies only: changes only when uv.lock changes.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project --extra timesfm --extra serve
+RUN uv sync --frozen --no-dev --no-install-project --extra timesfm --extra serve --extra web
 
 # The project itself (small layer).
 COPY src ./src
-RUN uv sync --frozen --no-dev --no-editable --extra timesfm --extra serve
+RUN uv sync --frozen --no-dev --no-editable --extra timesfm --extra serve --extra web
 COPY configs ./configs
 COPY deploy ./deploy
+COPY --from=web /web/dist ./web/dist
 
 ARG GIT_SHA=unknown
 ENV PATH=/app/.venv/bin:$PATH \

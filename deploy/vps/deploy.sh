@@ -8,14 +8,16 @@
 set -euo pipefail
 
 IMAGE_RE='^ghcr\.io/saldestechnology/ml-electro-mlops@sha256:[0-9a-f]{64}$'
-CONF="$HOME/.config/pricefc/deploy.env"   # ENV, MLFLOW_PORT, PREFECT_PORT, CRON_MORNING, CRON_AFTERNOON
+CONF="$HOME/.config/pricefc/deploy.env"   # ENV, *_PORT, CRON_MORNING, CRON_AFTERNOON
 UNITS="$HOME/.config/containers/systemd"
 CURRENT=localhost/pricefc:current
 PREVIOUS=localhost/pricefc:previous
-HEALTH_TIMEOUT=240   # seconds for MLflow, Prefect and the worker to come up
+HEALTH_TIMEOUT=240   # seconds for MLflow, Prefect, the worker and the dashboard to come up
 
 # shellcheck source=/dev/null
 source "$CONF"
+CRON_FORECAST="${CRON_FORECAST:-5 9 * * *}"   # after the 09:00 origin
+[[ -n "${WEB_PORT:-}" ]] || { echo "WEB_PORT missing in $CONF" >&2; exit 1; }
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 log() { echo "[deploy:$ENV] $*"; }
@@ -29,8 +31,9 @@ install_units() {
   mkdir -p "$UNITS"
   for f in "$tmp"/*; do
     sed -e "s|@ENV@|$ENV|g" -e "s|@MLFLOW_PORT@|$MLFLOW_PORT|g" \
-        -e "s|@PREFECT_PORT@|$PREFECT_PORT|g" -e "s|@CRON_MORNING@|$CRON_MORNING|g" \
-        -e "s|@CRON_AFTERNOON@|$CRON_AFTERNOON|g" "$f" > "$UNITS/$(basename "$f")"
+        -e "s|@PREFECT_PORT@|$PREFECT_PORT|g" -e "s|@WEB_PORT@|$WEB_PORT|g" \
+        -e "s|@CRON_MORNING@|$CRON_MORNING|g" -e "s|@CRON_AFTERNOON@|$CRON_AFTERNOON|g" \
+        -e "s|@CRON_FORECAST@|$CRON_FORECAST|g" "$f" > "$UNITS/$(basename "$f")"
   done
   rm -rf "$tmp"
   # Vault Agent config (role-id/secret-id next to it are issued once, not shipped).
@@ -42,7 +45,7 @@ install_units() {
 restart() {
   systemctl --user restart pricefc-pod.service
   systemctl --user restart pricefc-vault-agent.service pricefc-mlflow.service pricefc-prefect.service \
-    pricefc-worker.service
+    pricefc-worker.service pricefc-web.service
 }
 
 healthy() {
@@ -50,6 +53,7 @@ healthy() {
   while ((SECONDS < deadline)); do
     if curl -fsS "http://127.0.0.1:$MLFLOW_PORT/health" >/dev/null 2>&1 \
       && curl -fsS "http://127.0.0.1:$PREFECT_PORT/api/health" >/dev/null 2>&1 \
+      && curl -fsS "http://127.0.0.1:$WEB_PORT/api/health" >/dev/null 2>&1 \
       && systemctl --user is-active --quiet pricefc-worker.service; then
       return 0
     fi
@@ -62,7 +66,7 @@ status() {
   echo "env=$ENV"
   echo "current=$(podman image inspect "$CURRENT" --format '{{index .Labels "org.opencontainers.image.revision"}} {{.Digest}}' 2>/dev/null || echo none)"
   echo "previous=$(podman image inspect "$PREVIOUS" --format '{{index .Labels "org.opencontainers.image.revision"}} {{.Digest}}' 2>/dev/null || echo none)"
-  for s in pricefc-vault-agent pricefc-mlflow pricefc-prefect pricefc-worker; do
+  for s in pricefc-vault-agent pricefc-mlflow pricefc-prefect pricefc-worker pricefc-web; do
     echo "$s=$(systemctl --user is-active "$s.service" 2>/dev/null || true)"
   done
 }

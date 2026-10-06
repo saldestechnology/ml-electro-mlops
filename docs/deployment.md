@@ -145,10 +145,15 @@ ssh pricefc-vault 'VAULT_TOKEN=$(cat ~/.vault-operator-token) bin/vault kv put s
 AppRole credentials for an environment's agent (issue or rotate):
 `ssh pricefc-vps-root 'bash -s' < deploy/vault/issue-approle.sh <env> <user>`.
 
+`deploy.env` also holds `WEB_PORT` (the dashboard, published on the VPS loopback like MLflow
+and Prefect; staging 8100) and optionally `CRON_FORECAST` (default `5 9 * * *`; production
+runs after staging, e.g. `25 9 * * *`, so the two forecasts never share memory). Dashboard:
+`ssh -N -L 8100:127.0.0.1:8100 pricefc-vps` then http://localhost:8100.
+
 ## One-time setup (already done, 2026-10-05)
 
 As root on the VPS: `deploy/vps/bootstrap.sh <env> <user> <mlflow_port> <prefect_port>
-<cron_morning> <cron_afternoon> <ci_pubkey_file> <admin_pubkey_file>` creates the user (locked
+<cron_morning> <cron_afternoon> <ci_pubkey_file> <admin_pubkey_file> <web_port>` creates the user (locked
 password, linger, no sudo), directories, `deploy.env`, the Vault credentials directory and
 `authorized_keys`. GitHub Environments `staging` (branch `main`) and `production` (tags `v*`,
 required reviewer) hold `DEPLOY_SSH_KEY`, `VPS_KNOWN_HOSTS` and the `DEPLOY_TARGET` variable.

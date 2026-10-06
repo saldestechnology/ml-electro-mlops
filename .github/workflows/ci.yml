@@ -10,9 +10,29 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
-      - run: uv sync --frozen --extra serve
+      - run: uv sync --frozen --extra serve --extra web
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
       - run: uv run mypy
       - run: uv run pytest
       - run: shellcheck deploy/vps/*.sh deploy/vault/*.sh
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4   # version from web/package.json packageManager
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

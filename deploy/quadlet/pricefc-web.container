@@ -1,0 +1,20 @@
+[Unit]
+Description=pricefc @ENV@ dashboard (read-only web API + static frontend)
+
+[Container]
+Image=localhost/pricefc:current
+Pod=pricefc.pod
+ContainerName=pricefc-web
+# Read-only: the dashboard never writes; it reads forecasts, state metadata and datasets.
+Volume=%h/pricefc/data:/data:ro
+Environment=PRICEFC_ENV=@ENV@ PRICEFC_ENV_CONFIG=configs/envs/@ENV@.yaml PRICEFC_WEB_DIST=/app/web/dist
+Exec=python -m pricefc web --host 0.0.0.0 --port 8080
+HealthCmd=curl -fsS http://localhost:8080/api/health
+HealthInterval=60s
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

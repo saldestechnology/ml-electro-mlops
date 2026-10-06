@@ -13,3 +13,5 @@ tests
 .hypothesis
 .env
 .env.*
+web/node_modules
+web/dist

@@ -11,7 +11,7 @@ Volume=%h/pricefc/data:/data
 # Secrets rendered by the Vault Agent sidecar (tmpfs); read via pricefc.secrets.
 Volume=%t/pricefc-secrets:/run/secrets:ro
 Environment=PRICEFC_ENV=@ENV@ PRICEFC_ENV_CONFIG=configs/envs/@ENV@.yaml PREFECT_API_URL=http://localhost:4200/api
-Environment="PRICEFC_CRON_MORNING=@CRON_MORNING@" "PRICEFC_CRON_AFTERNOON=@CRON_AFTERNOON@"
+Environment="PRICEFC_CRON_MORNING=@CRON_MORNING@" "PRICEFC_CRON_AFTERNOON=@CRON_AFTERNOON@" "PRICEFC_CRON_FORECAST=@CRON_FORECAST@"
 Exec=python -m pricefc serve
 
 [Service]
