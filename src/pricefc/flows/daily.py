@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import structlog
 from prefect import flow, task
 
 CONFIG = Path("configs/base.yaml")
 INGEST = Path("configs/ingest.yaml")
 FEATURES = Path("configs/features.yaml")
+log = structlog.get_logger(__name__)
 
 
 def _base() -> Any:
@@ -98,7 +100,7 @@ def _alert(flow: Any, flow_run: Any, state: Any) -> None:
 
 
 @flow(name="ingest-daily", log_prints=True, on_failure=[_alert], on_crashed=[_alert])
-def ingest_daily() -> dict[str, dict[str, int]]:
+def ingest_daily() -> dict[str, Any]:
     """Refresh prices and weather (archives, previous runs, live forecast as issued)."""
     out = {
         "prices": ingest_prices_task(),
@@ -106,7 +108,8 @@ def ingest_daily() -> dict[str, dict[str, int]]:
         "historical_forecast": ingest_weather_task("historical_forecast"),
         "forecast": ingest_weather_task("forecast"),
     }
-    failed = {k: v["failed"] for k, v in out.items() if v["failed"]}
+    out["silver"] = _build_silver_best_effort()
+    failed = {k: v["failed"] for k, v in out.items() if v.get("failed", 0)}
     if failed:
         # Snapshots are kept and marked invalid; fail the run so it is visible and alerts.
         raise RuntimeError(f"validation failed: {failed}")
@@ -157,6 +160,30 @@ def _short(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text[0][:300] if text else ''}"
 
 
+@task(retries=1, retry_delay_seconds=300)
+def build_silver_task() -> dict[str, Any]:
+    """Refresh the cleaned lake from all valid raw snapshots."""
+    from pricefc.lake import build_silver
+
+    return build_silver(_base())
+
+
+def _build_silver_best_effort() -> dict[str, Any]:
+    """Run the silver task and report failures without stopping ingestion or forecasts."""
+    try:
+        return build_silver_task()
+    except Exception as exc:
+        summary = _short(exc)
+        log.error("silver_build_failed", error=summary)
+        try:
+            from pricefc.alerts import send_telegram
+
+            send_telegram(f"silver build failed: {summary[:500]}")
+        except Exception:
+            pass
+        return {"error": summary}
+
+
 @flow(name="forecast-daily", log_prints=True, on_failure=[_alert], on_crashed=[_alert])
 def forecast_daily(day: date | None = None) -> dict[str, Any]:
     """Morning forecast: fresh prices and weather, rebuilt datasets, then per zone the live
@@ -176,6 +203,7 @@ def forecast_daily(day: date | None = None) -> dict[str, Any]:
                 errors[f"ingest:{name}"] = f"{ingest[name]['failed']} invalid snapshot(s)"
         except Exception as exc:
             errors[f"ingest:{name}"] = _short(exc)
+    silver = _build_silver_best_effort()
     zones: dict[str, Any] = {}
     for zone in base.zones:
         try:
@@ -183,7 +211,13 @@ def forecast_daily(day: date | None = None) -> dict[str, Any]:
             zones[zone] = {"datasets": datasets, **forecast_zone_task(zone, day)}
         except Exception as exc:
             errors[zone] = _short(exc)
-    out = {"day": day.isoformat(), "ingest": ingest, "zones": zones, "errors": errors}
+    out = {
+        "day": day.isoformat(),
+        "ingest": ingest,
+        "silver": silver,
+        "zones": zones,
+        "errors": errors,
+    }
     if errors:
         raise RuntimeError(f"forecast-daily {day}: {errors}")
     print(f"forecast ok: {out}")

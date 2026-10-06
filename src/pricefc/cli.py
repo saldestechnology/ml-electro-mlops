@@ -59,6 +59,7 @@ ZONE_OPT = typer.Option(None, "--zone", "-z", help="Repeatable. Default: zones i
 START_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="UTC start date.")
 END_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="UTC end date.")
 LIVE_DAY_OPT = typer.Option(None, "--day", formats=["%Y-%m-%d"], help="Origin date.")
+LAKE_SOURCE_OPT = typer.Option(None, "--source", help="Repeatable source filter.")
 
 
 def _date(d: datetime | None) -> date | None:
@@ -259,6 +260,84 @@ def dataset_live_cmd(
         )
     if failed:
         raise typer.Exit(1)
+
+
+lake_app = typer.Typer(no_args_is_help=True, help="Build and query cleaned silver tables.")
+app.add_typer(lake_app, name="lake")
+
+
+@lake_app.command("build")
+def lake_build_cmd(
+    source: list[str] | None = LAKE_SOURCE_OPT,
+    config: Path = CONFIG_OPT,
+) -> None:
+    """Build or incrementally refresh the silver Parquet layer."""
+    from pricefc.lake import build_silver
+
+    report = build_silver(load_config(config), source)
+    typer.echo(
+        f"built={len(report['built'])} skipped={len(report['skipped'])} "
+        f"rows={report['rows']} conflicts={report['conflicts']} empty={len(report['empty'])}"
+    )
+    for name in report["built"]:
+        typer.echo(f"[built] {name}")
+    for name in report["skipped"]:
+        typer.echo(f"[current] {name}")
+    for entry in report["empty"]:
+        typer.echo(f"[no valid snapshots] {entry['source']}/{entry['dataset']}/{entry['key']}")
+
+
+@lake_app.command("tables")
+def lake_tables_cmd(config: Path = CONFIG_OPT) -> None:
+    """List silver tables, row counts, ranges and recorded conflicts."""
+    from pricefc.lake.query import table_metadata
+
+    entries = table_metadata(load_config(config))
+    if not entries:
+        typer.echo("no silver tables; run `pricefc lake build` first")
+        return
+    headers = ("table", "rows", "time range", "conflicts")
+    rows = []
+    for entry in entries:
+        span = entry["time_range"]
+        time_range = f"{span['start'] or '-'} .. {span['end'] or '-'}"
+        rows.append((entry["table_name"], str(entry["rows"]), time_range, str(entry["conflicts"])))
+    widths = [max(len(headers[i]), *(len(row[i]) for row in rows)) for i in range(len(headers))]
+    typer.echo("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+    typer.echo("  ".join("-" * width for width in widths))
+    for row in rows:
+        typer.echo("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+
+
+@lake_app.command("sql")
+def lake_sql_cmd(
+    sql: str = typer.Argument(..., help="One read-only SELECT statement."),
+    config: Path = CONFIG_OPT,
+    limit: int = typer.Option(20, min=1, max=100, help="Maximum rows to print."),
+) -> None:
+    """Run a read-only query against silver Parquet views and print a small result table."""
+    from pricefc.lake.query import connect, execute_readonly
+
+    connection = connect(load_config(config))
+    try:
+        cursor = execute_readonly(connection, sql)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    columns = [description[0] for description in cursor.description or []]
+    rows = cursor.fetchmany(limit + 1)
+    truncated = len(rows) > limit
+    rows = rows[:limit]
+    rendered = [["NULL" if value is None else str(value) for value in row] for row in rows]
+    widths = [
+        max(len(column), *(len(row[i]) for row in rendered)) if rendered else len(column)
+        for i, column in enumerate(columns)
+    ]
+    typer.echo("  ".join(columns[i].ljust(widths[i]) for i in range(len(columns))))
+    typer.echo("  ".join("-" * width for width in widths))
+    for row in rendered:
+        typer.echo("  ".join(row[i].ljust(widths[i]) for i in range(len(columns))))
+    if truncated:
+        typer.echo(f"... showing first {limit} rows")
 
 
 backtest_app = typer.Typer(no_args_is_help=True, help="Rolling-origin backtests.")

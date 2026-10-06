@@ -415,3 +415,37 @@
   code changes therefore require rebuilding datasets before serving. Rows and a manifest with
   the dataset version, source lineage, coverage and audit report are written under
   `data/live/<zone>/<origin-date>/`.
+
+## 2026-10-07 — Data lake: silver layer + DuckDB
+- **Layers**: `data/raw/` is bronze, the immutable record of API responses and validation
+  results; `data/lake/silver/` is the cleaned, queryable snapshot merge; `data/datasets/` is
+  gold, the versioned model input. Silver keeps raw columns, UTC timestamps and source units,
+  then adds `_pulled_at` and `_snapshot` lineage columns. Tables are partitioned by UTC year.
+- **Validity and revisions**: silver takes valid snapshots through the same
+  `list_snapshots`/`load_latest` validity and latest-pull semantics used by dataset loaders.
+  Regular series collapse to their latest row per natural key. Each changed value is recorded
+  in a sibling `_conflicts.parquet` file with the timestamp/key, column, old and new values,
+  both pull times and snapshot paths. Known-bad elprisetjustnu days remain excluded as recorded
+  by the price ingester; they are not repaired or backfilled.
+- **Weather collapse decisions**: `previous_runs` is indexed by valid time and fixed lead; the
+  matching lead/run is the same quantity on later pulls, so updates are corrections and the
+  latest value wins (differences go to conflicts). `single_runs` fetches those same fixed-lead
+  model runs directly; later pulls can fill or correct the same run values, so it also collapses.
+  `historical_forecast` is a stitched archive without per-row issue time; later pulls revise the
+  same archived value and it collapses. The live `forecast` endpoint is different: its value is
+  a forecast issued at that pull time, which is not represented in the raw timestamp column.
+  It is append-style, retaining every pull as a separate row with `_pulled_at`; users choose a
+  vintage by pull time. ENTSO-E per-neighbour series remain separate tables by their existing
+  direction key, and irregular generation-unavailability rows use their unit identifier when
+  available in addition to the event timestamp.
+- **Incremental builds**: `_manifest.json` records each table's valid source snapshot hashes,
+  row/time range, conflict count, build time and git SHA. Unchanged hash sets are skipped;
+  forecast vintages also include pull time in the change check so identical values from a new
+  issue time are retained. Each table is assembled in a temporary directory and replaced by
+  rename.
+- **Queries**: `pricefc lake build [--source open_meteo]` builds the layer;
+  `pricefc lake tables` lists tables and conflicts; `pricefc lake sql "SELECT ..."` runs one
+  read-only SELECT. DuckDB creates one view per silver table, plus a long `prices` view with
+  `zone` and `source` columns. Examples and table naming are in README.md.
+- **Backups are separate**: silver is derived from raw and can be rebuilt. VPS backups are
+  handled separately by `tools/backup_vps.sh`, maintained outside this change.
