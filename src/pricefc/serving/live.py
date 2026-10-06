@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +84,36 @@ def _live_frame(live: Any) -> tuple[pd.DataFrame, str | None]:
     return live.frame, (Path(path).name if path is not None else None)
 
 
+def _check_no_gap(
+    zone: str, state: ModelState, day: date, eval_df: pd.DataFrame, manifest: dict[str, Any]
+) -> None:
+    """Every origin between the state's last one and `day` must be in the evaluation dataset.
+
+    `advance` serves only the origins the dataset holds, like the backtest. The backtest skips
+    days the build dropped for lack of a target; a day that is merely not built yet (prices
+    not ingested, dataset not rebuilt) would be skipped for good and the served state would
+    no longer match its backtest. So: only gaps the build itself reports are allowed."""
+    if state.last_origin is None:
+        return
+    have = set(eval_df["origin_date"].astype(str))
+    dropped = {
+        (date.fromisoformat(t) - timedelta(days=1)).isoformat()
+        for t in manifest.get("build", {}).get("target_dates_dropped", [])
+    }
+    gap = [
+        d.isoformat()
+        for d in (
+            state.last_origin + timedelta(days=i) for i in range(1, (day - state.last_origin).days)
+        )
+        if d.isoformat() not in have and d.isoformat() not in dropped
+    ]
+    if gap:
+        raise StateError(
+            f"{zone}: evaluation dataset lacks origins {gap} between the state's last origin "
+            f"{state.last_origin} and {day}; ingest prices and rebuild datasets first"
+        )
+
+
 def ensure_state(
     zone: str, model: str, alias: str, directory: Path, keep_backups: int
 ) -> tuple[ModelState, str]:
@@ -146,6 +176,7 @@ def forecast_origin(
     train_ds = bt_run.latest_dataset(base, zone, "stitched")
     eval_ds = bt_run.latest_dataset(base, zone, "true_lead")
     train_df, eval_df = train_ds.read(), eval_ds.read()
+    _check_no_gap(zone, state, day, eval_df, eval_ds.manifest)
     if live is None:
         from pricefc.config import load_features_config, load_ingest_config
         from pricefc.datasets.live import build_live_rows

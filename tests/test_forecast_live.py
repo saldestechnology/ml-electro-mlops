@@ -2,7 +2,7 @@
 
 import sys
 import types
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -211,3 +211,27 @@ def test_column_mismatch_fails_before_the_state_is_touched(
     assert {f: (local / f).read_bytes() for f in (STATE_FILE, META_FILE)} == before
     assert [p.name for p in backups_dir(local).iterdir()] == [origins[8].isoformat()]
     assert not forecast_path(cfg, "SE3", origins[10]).exists()
+
+
+def test_missed_day_absent_from_eval_dataset_is_refused(
+    cfg: BaseConfig, setup: tuple[pd.DataFrame, list[date], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missed origin the eval dataset does not hold yet would be skipped for good."""
+    df, origins, _ = setup
+    run(cfg, df, origins[9])
+    gap = origins[10].isoformat()
+    stale = df[df["origin_date"] != gap]
+    path = Path(bt_run.latest_dataset(cfg, "SE3", "true_lead").path)
+    stale.to_parquet(path / "data.parquet", index=False)
+    local = state_dir(cfg, "SE3", MODEL)
+    before = (local / STATE_FILE).read_bytes()
+    with pytest.raises(StateError, match=f"lacks origins \\['{gap}'\\]"):
+        run(cfg, stale, origins[11])
+    assert (local / STATE_FILE).read_bytes() == before
+
+    # A day the build dropped for lack of a target is skipped, as in the backtest.
+    stored = bt_run.latest_dataset(cfg, "SE3", "true_lead")
+    target = (origins[10] + timedelta(days=1)).isoformat()
+    monkeypatch.setitem(stored.manifest, "build", {"target_dates_dropped": [target]})
+    res = run(cfg, stale, origins[11])
+    assert res.caught_up == []
