@@ -34,6 +34,9 @@ const checks = [
   ['c-naive', 'c-bg', 3],
   ['c-naive', 'c-band-90', 3],
   ['c-rule-strong', 'c-bg', 3],
+  // the chart's zero/base rule: visible as a reference, yet clearly apart from the Actual line
+  ['c-rule-zero', 'c-bg', 2],
+  ['c-fg', 'c-rule-zero', 3],
 ];
 let bad = 0;
 for (const [name, t] of Object.entries(themes)) {

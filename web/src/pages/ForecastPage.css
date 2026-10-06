@@ -145,6 +145,76 @@
   margin-bottom: var(--s5);
 }
 
+/* forecast error against published actuals: a quiet row of signed figures */
+.fcerr {
+  margin-bottom: var(--s5);
+}
+.fcerr__title {
+  font-size: var(--t-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  padding-top: var(--s1);
+  border-top: var(--rule-strong) solid var(--c-rule-strong);
+}
+.fcerr__lede {
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-fg-2);
+  margin-bottom: var(--s2);
+}
+.fcerr__parts,
+.fcerr__day {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  row-gap: var(--s2);
+}
+.fcerr__parts {
+  margin-bottom: var(--s3);
+}
+.fcerr__day .fcerr__cell {
+  grid-column: span 2;
+}
+.fcerr__cell {
+  border-top: var(--rule) solid var(--c-rule);
+  padding-top: var(--s1);
+}
+.fcerr__cell dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+.fcerr__hours {
+  font-weight: 400;
+  color: var(--c-fg-3);
+  font-variant-numeric: tabular-nums;
+}
+.fcerr__value {
+  font-size: var(--t-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+}
+.fcerr__cell--signal {
+  border-top: var(--rule-strong) solid var(--c-signal);
+  padding-top: calc(var(--s1) - 1px);
+}
+.fcerr__cell--signal .fcerr__value {
+  color: var(--c-signal-text);
+}
+.fcerr__note .nowrap {
+  white-space: nowrap;
+}
+.fcerr__note {
+  flex-basis: 100%;
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 1024px) {
   .forecast__meta,
   .forecast__main {
@@ -167,6 +237,15 @@
 @media (max-width: 600px) {
   .figures {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fcerr__parts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .fcerr__day {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fcerr__day .fcerr__cell {
+    grid-column: auto;
   }
   .forecast__head {
     padding-top: var(--s3);

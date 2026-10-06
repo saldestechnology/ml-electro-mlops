@@ -52,6 +52,13 @@ describe('fixtures', () => {
     expect(past.hours.every((h) => h.actual !== null && h.naive_7d !== null)).toBe(true);
   });
 
+  it('include a day with actuals and a large night under-forecast (SE3 latest)', async () => {
+    const f = await client.forecast('SE3');
+    const night = f.hours.filter((h) => h.hour_local <= 5);
+    const bias = night.reduce((s, h) => s + h.q50 - (h.actual ?? 0), 0) / night.length;
+    expect(bias).toBeLessThan(-30);
+  });
+
   it('always reach the most recent DST change through an earlier origin', async () => {
     expect(lastDstDay('2026-10-07')).toBe('2026-03-29');
     const early = createClient(createFixtureFetch('2026-10-06'));
