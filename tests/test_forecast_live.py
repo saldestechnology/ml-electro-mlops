@@ -23,6 +23,7 @@ from tests.test_model_state import champion_like
 pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 
 MODEL = "ensemble_hourly_exp"
+CHALLENGER = "ensemble_hourly_exp_tfm3"
 TARGETS = ["y", "y_n_periods", "y_is_pt15m"]
 
 
@@ -235,3 +236,36 @@ def test_missed_day_absent_from_eval_dataset_is_refused(
     monkeypatch.setitem(stored.manifest, "build", {"target_dates_dropped": [target]})
     res = run(cfg, stale, origins[11])
     assert res.caught_up == []
+
+
+def test_challenger_forecast_uses_separate_state_file_and_run_role(
+    cfg: BaseConfig,
+    setup: tuple[pd.DataFrame, list[date], Path],
+    tmp_path: Path,
+) -> None:
+    df, origins, _ = setup
+    state = ModelState(champion_like(), "SE3", CHALLENGER, QS, first_origin=origins[0])
+    state.advance(df, df, origins[8])
+    state.datasets = {"train": "stitched-v1", "eval": "true_lead-v1"}
+    registration_dir = tmp_path / "challenger-registration"
+    state.save(registration_dir)
+    register_state(cfg, state, registration_dir, alias="challenger")
+
+    day = origins[9]
+    res = forecast_origin(
+        cfg,
+        "SE3",
+        day,
+        model=CHALLENGER,
+        alias="challenger",
+        live=live_rows(df, day),
+    )
+    challenger_path = forecast_path(cfg, "SE3", day, "challenger")
+    assert res.role == "challenger"
+    assert res.path == challenger_path and challenger_path.exists()
+    assert not forecast_path(cfg, "SE3", day).exists()
+    assert state_dir(cfg, "SE3", CHALLENGER).exists()
+    written = pd.read_parquet(challenger_path)
+    assert set(written["model"]) == {CHALLENGER}
+    run = mlflow.get_run(res.run_id)
+    assert run.data.tags["role"] == "challenger"

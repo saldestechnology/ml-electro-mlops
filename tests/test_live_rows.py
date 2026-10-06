@@ -63,6 +63,10 @@ def test_live_rows_match_normal_origin_without_target_prices(
 
     features = builder.feature_columns(normal)
     pd.testing.assert_frame_equal(live.frame[features], normal[features], check_exact=True)
+    from pricefc.config import load_model_params
+
+    challenger_covariates = load_model_params(Path("configs/models"))["timesfm3_cov"]["covariates"]
+    assert set(challenger_covariates) <= set(live.frame.columns)
     assert live.frame[["y", "y_n_periods", "y_is_pt15m"]].isna().all().all()
     assert live.report["leakage_audit"]["passed"]
     assert live.report["leakage_audit"]["target_change_required"] is False

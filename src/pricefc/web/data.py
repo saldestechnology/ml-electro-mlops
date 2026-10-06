@@ -41,9 +41,13 @@ class _ForecastFile:
     path: Path
 
 
-def _forecast_files(base: BaseConfig, zone: str) -> list[_ForecastFile]:
+def _forecast_files(base: BaseConfig, zone: str, role: str = "champion") -> list[_ForecastFile]:
     """List forecast files with valid ISO origin names, newest first."""
     root = base.paths.data_root / "forecasts" / zone
+    if role == "challenger":
+        root /= "challenger"
+    elif role != "champion":
+        raise ValueError(f"unknown forecast role {role!r}")
     files: list[_ForecastFile] = []
     for path in root.glob("*.parquet"):
         try:
@@ -144,9 +148,9 @@ def _number(row: pd.Series, column: str) -> float | None:
     return float(value)
 
 
-def forecast_origins(base: BaseConfig, zone: str) -> list[str]:
+def forecast_origins(base: BaseConfig, zone: str, role: str = "champion") -> list[str]:
     """Return available origins newest first, using the forecast filenames as the index."""
-    return [item.origin.isoformat() for item in _forecast_files(base, zone)]
+    return [item.origin.isoformat() for item in _forecast_files(base, zone, role)]
 
 
 def zone_summaries(base: BaseConfig, today: date | None = None) -> list[dict[str, Any]]:
@@ -155,6 +159,7 @@ def zone_summaries(base: BaseConfig, today: date | None = None) -> list[dict[str
     summaries: list[dict[str, Any]] = []
     for zone in ZONES:
         files = _forecast_files(base, zone)
+        challenger_files = _forecast_files(base, zone, "challenger")
         latest = files[0] if files else None
         row: pd.Series | None = None
         if latest is not None:
@@ -179,14 +184,31 @@ def zone_summaries(base: BaseConfig, today: date | None = None) -> list[dict[str
                 "forecast_made_at": made_at,
                 "last_fit": metadata.get("last_fit"),
                 "stale": origin is None or origin < today,
+                "challenger": _challenger_summary(challenger_files),
             }
         )
     return summaries
 
 
-def forecast_data(base: BaseConfig, zone: str, origin: date | None = None) -> dict[str, Any] | None:
+def _challenger_summary(files: list[_ForecastFile]) -> dict[str, Any] | None:
+    if not files:
+        return None
+    latest = files[0]
+    frame = pd.read_parquet(latest.path)
+    if frame.empty:
+        return None
+    version = frame.iloc[0].get("model_version")
+    return {
+        "latest_origin": latest.origin.isoformat(),
+        "model_version": _number_or_string(version),
+    }
+
+
+def forecast_data(
+    base: BaseConfig, zone: str, origin: date | None = None, role: str = "champion"
+) -> dict[str, Any] | None:
     """Build an hourly forecast response, joining only published actuals and naive prices."""
-    files = _forecast_files(base, zone)
+    files = _forecast_files(base, zone, role)
     selected = (
         next((item for item in files if item.origin == origin), None)
         if origin
@@ -223,6 +245,7 @@ def forecast_data(base: BaseConfig, zone: str, origin: date | None = None) -> di
         "origin": _timestamp_local_iso(origin_value),
         "target_date": str(first.get("target_date", "")),
         "model": str(first.get("model", MODEL_NAME)),
+        "role": role,
         "model_version": _number_or_string(first.get("model_version")),
         "forecast_made_at": made_at,
         "quantiles": list(base.quantiles),
@@ -311,6 +334,7 @@ def performance_data(
     days: int,
     backtest: dict[str, float],
     today: date | None = None,
+    role: str = "champion",
 ) -> dict[str, Any]:
     """Score forecasts in the latest `days` calendar-day window.
 
@@ -320,7 +344,9 @@ def performance_data(
     """
     today = today or datetime.now(LOCAL_TZ).date()
     first_day = today - timedelta(days=days - 1)
-    selected = [item for item in _forecast_files(base, zone) if first_day <= item.origin <= today]
+    selected = [
+        item for item in _forecast_files(base, zone, role) if first_day <= item.origin <= today
+    ]
     actuals = _actual_index(base, zone)
     parts: list[pd.DataFrame] = []
     for item in reversed(selected):
@@ -348,6 +374,7 @@ def performance_data(
                 )
     return {
         "zone": zone,
+        "role": role,
         "days": days,
         "n_origins_scored": len(scored),
         "live": live,
