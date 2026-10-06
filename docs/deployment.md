@@ -40,6 +40,14 @@ ssh -N -L 5100:127.0.0.1:5100 -L 4300:127.0.0.1:4300 pricefc-vps-staging  # stag
 Release to production: create a GitHub release with a `v*` tag on a commit that is already on
 staging, then approve the `production` deployment in the Actions run.
 
+## Web dashboard
+
+Install the optional `web` extra and run `pricefc web` locally; the API listens on
+`127.0.0.1:8000`. To open a private pod's dashboard from your laptop, forward its loopback port
+over SSH, for example `ssh -N -L 8000:127.0.0.1:8000 pricefc-vps`, then visit
+`http://127.0.0.1:8000`. Keep the service bound to loopback on the pod; the tunnel provides
+private access without exposing the dashboard publicly.
+
 Status, logs, rollback (as the environment user):
 
 ```bash

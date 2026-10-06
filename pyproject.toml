@@ -39,6 +39,7 @@ timesfm = [
 timesfm-xreg = ["pricefc[timesfm]", "jax>=0.7", "scikit-learn>=1.5"]
 # Scheduling and serving on the VPS (M6).
 serve = ["prefect>=3.8"]
+web = ["fastapi>=0.115", "uvicorn>=0.30"]
 
 [project.scripts]
 pricefc = "pricefc.cli:app"
