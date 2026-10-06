@@ -1,0 +1,67 @@
+.smap {
+  max-width: 240px;
+}
+.smap__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.smap__zone {
+  cursor: pointer;
+}
+/* the focused zone gets a full outline drawn on top (.smap__focus), not a bounding box */
+.smap__zone:focus,
+.smap__zone:focus-visible {
+  outline: none;
+}
+.smap__shape {
+  fill: var(--c-map-fill);
+  stroke: var(--c-bg);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.smap__zone:hover .smap__shape {
+  fill: var(--c-map-hover);
+}
+.smap__zone[aria-current='true'] .smap__shape {
+  fill: var(--c-signal);
+}
+.smap__label {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-anchor: middle;
+  fill: var(--c-fg);
+  pointer-events: none;
+}
+.smap__zone[aria-current='true'] .smap__label {
+  fill: var(--c-bg);
+}
+/* the same open square the zone switcher uses for a stale zone */
+.smap__stale {
+  fill: none;
+  stroke: var(--c-fg);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.smap__zone[aria-current='true'] .smap__stale {
+  stroke: var(--c-bg);
+}
+.smap__focus {
+  fill: none;
+  stroke: var(--c-fg);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.smap__caption {
+  margin-top: var(--s1);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--c-fg-3);
+}

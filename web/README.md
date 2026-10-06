@@ -19,6 +19,7 @@ pnpm lint            # eslint (typescript-eslint strict, type-checked) + prettie
 pnpm typecheck       # tsc
 node scripts/contrast.mjs     # WCAG contrast of the colour tokens, both themes
 node scripts/build-icons.mjs  # regenerate the bundled Tabler icon subset
+node scripts/build-map.mjs    # regenerate the schematic zone map (src/assets/map/README.md)
 ```
 
 Fixture mode is explicit: `VITE_USE_FIXTURES=1` swaps the client's `fetch` for
@@ -37,7 +38,8 @@ src/fixtures/              deterministic contract-shaped fixtures + fake fetch
 src/hooks/                 useApi (tiny fetch hook), status context, element width
 src/lib/                   Stockholm time helpers, number formatting, day summary
 src/components/chart/      fan chart (hand-built SVG, d3-scale/d3-shape), DST slot logic
-src/components/            layout, status line, zone switcher, table, states, icons
+src/components/            layout, status line, zone switcher + schematic zone map, table, states, icons
+src/assets/map/            generated SE1–SE4 map paths (Natural Earth outline, approximate borders)
 src/pages/                 Forecast (/), Performance (/performance), Model (/model)
 src/styles/                fonts.css, tokens.css (all colours/type/space), base.css
 ```

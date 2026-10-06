@@ -27,6 +27,23 @@ describe('forecast page', () => {
     expect(screen.getByText('Sample data')).toBeInTheDocument();
   });
 
+  it('shows the zone map beside the forecast, linked and marked like the switcher', async () => {
+    renderApp('/?zone=SE2');
+    const map = await screen.findByRole('group', { name: 'Bidding zones of Sweden' });
+    expect(within(map).getAllByRole('link')).toHaveLength(4);
+    expect(within(map).getByRole('link', { name: 'SE2, Sundsvall (selected)' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    // SE3 is stale in the fixtures
+    expect(within(map).getByRole('link', { name: 'SE3, Stockholm (stale)' })).toHaveAttribute(
+      'href',
+      '/?zone=SE3',
+    );
+    await userEvent.click(within(map).getByRole('link', { name: /^SE4/ }));
+    expect(await screen.findByRole('link', { name: 'SE4, Malmö (selected)' })).toBeInTheDocument();
+  });
+
   it('summarises the forecast error by part of the day when actuals exist', async () => {
     renderApp('/');
     const section = await screen.findByRole('region', { name: /Forecast error/ });

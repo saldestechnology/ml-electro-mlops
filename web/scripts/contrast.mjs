@@ -37,6 +37,11 @@ const checks = [
   // the chart's zero/base rule: visible as a reference, yet clearly apart from the Actual line
   ['c-rule-zero', 'c-bg', 2],
   ['c-fg', 'c-rule-zero', 3],
+  // zone map: labels on the zone fills, the selected zone's label on the signal red
+  ['c-fg', 'c-map-fill', 4.5],
+  ['c-fg', 'c-map-hover', 4.5],
+  ['c-bg', 'c-signal', 4.5],
+  ['c-map-fill', 'c-bg', 1.3],
 ];
 let bad = 0;
 for (const [name, t] of Object.entries(themes)) {
