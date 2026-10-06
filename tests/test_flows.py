@@ -36,8 +36,9 @@ def test_ingest_flow_fails_loudly_on_invalid_snapshots(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(daily, "ingest_prices_task", fake("prices", 0))
     monkeypatch.setattr(daily, "ingest_weather_task", fake("weather", 0))
+    monkeypatch.setattr(daily, "_build_silver_best_effort", lambda: {"built": []})
     out = daily.ingest_daily.fn()
-    assert set(out) == {"prices", "previous_runs", "historical_forecast", "forecast"}
+    assert set(out) == {"prices", "previous_runs", "historical_forecast", "forecast", "silver"}
     assert calls == [
         "prices",
         "weather:previous_runs",
@@ -73,6 +74,11 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
 
     monkeypatch.setattr(daily, "ingest_prices_task", ingest)
     monkeypatch.setattr(daily, "ingest_weather_task", ingest)
+    monkeypatch.setattr(
+        daily,
+        "_build_silver_best_effort",
+        lambda: calls.append("silver") or {"error": "build failed"},
+    )
     monkeypatch.setattr(daily, "build_datasets_task", build)
     monkeypatch.setattr(daily, "forecast_zone_task", forecast)
     day = date(2026, 10, 6)
@@ -84,6 +90,7 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
         "ingest:previous_runs",
         "ingest:historical_forecast",
         "ingest:single_runs",
+        "silver",
         "build:SE3",
         f"forecast:SE3:{day}",
         "build:SE4",
@@ -95,6 +102,7 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
     monkeypatch.setattr(daily, "forecast_zone_task", lambda z, d: {"version": "1"})
     out = daily.forecast_daily.fn(day)
     assert set(out["zones"]) == {"SE3", "SE4", "SE1"} and out["errors"] == {}
+    assert out["silver"] == {"error": "build failed"}
 
 
 def test_failure_hook_alerts_with_a_short_summary(monkeypatch: pytest.MonkeyPatch) -> None:

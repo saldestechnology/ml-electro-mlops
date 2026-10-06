@@ -40,6 +40,22 @@ Every pull writes an immutable snapshot under `data/raw/` with a `manifest.json`
 to the MLflow `ingest` experiment. Validation failures are kept but marked, and the command
 exits non-zero.
 
+## Querying the data
+
+Build the cleaned silver tables and inspect them with DuckDB:
+
+```bash
+uv run python -m pricefc lake build
+uv run python -m pricefc lake tables
+uv run python -m pricefc lake sql "SELECT zone, timestamp, price_eur_mwh FROM prices WHERE zone = 'SE3' LIMIT 5"
+```
+
+The silver layer lives under `data/lake/silver/`. `prices` combines the available price zones;
+individual tables such as `prices_se3` and `weather_previous_runs_se3_gavle` are queryable too.
+Forecast endpoint rows retain `_pulled_at` so a forecast vintage can be selected explicitly;
+revision rows are available through each table's `<table>_conflicts` view.
+See `docs/decisions.md` for the merge and revision rules.
+
 Weather data: [Open-Meteo](https://open-meteo.com/), CC BY 4.0.
 Electricity prices: [elprisetjustnu.se](https://www.elprisetjustnu.se/).
 

@@ -187,13 +187,50 @@ def load_latest(
     Returns the combined table and the snapshots that contributed at least one row (for
     lineage logging); fully superseded snapshots are not reported.
     """
-    snaps = list_snapshots(raw_root, source, dataset, key)
+    df, used = load_latest_with_lineage(
+        raw_root, source, dataset, key, as_of=as_of, key_cols=key_cols
+    )
+    if df.empty:
+        return df.drop(columns=["_pulled_at", "_snapshot"], errors="ignore"), used
+    return df.drop(columns=["_pulled_at", "_snapshot"]).reset_index(drop=True), used
+
+
+def load_latest_with_lineage(
+    raw_root: Path,
+    source: str,
+    dataset: str,
+    key: str,
+    *,
+    as_of: datetime | None = None,
+    key_cols: tuple[str, ...] = ("timestamp",),
+    valid_snapshots: list[Snapshot] | None = None,
+) -> tuple[pd.DataFrame, list[Snapshot]]:
+    """Like :func:`load_latest`, retaining the winning pull time and relative snapshot path.
+
+    The validity filter, pull ordering, key sort and duplicate resolution are shared with
+    ``load_latest`` so downstream layers cannot drift from dataset-loader semantics. If
+    ``valid_snapshots`` is supplied, it must be the valid result of ``list_snapshots``; this lets
+    a caller keep the table build and its lineage inventory on the same snapshot set.
+    """
+    snaps = (
+        list_snapshots(raw_root, source, dataset, key)
+        if valid_snapshots is None
+        else valid_snapshots
+    )
     if as_of is not None:
         snaps = [s for s in snaps if s.pulled_at <= as_of]
     if not snaps:
         return pd.DataFrame(), []
-    frames = [s.read().assign(_pulled_at=s.pulled_at, _snap=i) for i, s in enumerate(snaps)]
-    df = pd.concat(frames, ignore_index=True)
-    df = df.sort_values([*key_cols, "_pulled_at"]).drop_duplicates(list(key_cols), keep="last")
-    used = [snaps[i] for i in sorted(df["_snap"].unique())]
-    return df.drop(columns=["_pulled_at", "_snap"]).reset_index(drop=True), used
+
+    frames = []
+    for i, snap in enumerate(snaps):
+        frame = snap.read()
+        frame["_pulled_at"] = snap.pulled_at
+        frame["_snapshot"] = snap.path.relative_to(raw_root).as_posix()
+        frame["_snap"] = i
+        frames.append(frame)
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.sort_values([*key_cols, "_pulled_at"], kind="stable")
+    combined = combined.drop_duplicates(list(key_cols), keep="last")
+    used = [snaps[i] for i in sorted(combined["_snap"].unique())]
+    return combined.drop(columns=["_snap"]).reset_index(drop=True), used
