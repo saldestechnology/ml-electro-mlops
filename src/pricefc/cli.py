@@ -388,8 +388,8 @@ def state_advance_cmd(
     for z in zone or list(base.zones):
         d = state_dir or base.paths.data_root / "state" / z / model
         eval_ds = latest_dataset(base, z, "true_lead", eval_version)
-        train_df = latest_dataset(base, z, "stitched", train_version).read()
-        eval_df = eval_ds.read()
+        train_ds = latest_dataset(base, z, "stitched", train_version)
+        train_df, eval_df = train_ds.read(), eval_ds.read()
         if (d / META_FILE).exists():
             state = ModelState.load(d)
             if state.zone != z or state.spec != model:
@@ -399,6 +399,7 @@ def state_advance_cmd(
             state = new_state(model, z, base, load_model_params(models_dir), first_origin=first)
         end = _date(until) or max(date_.fromisoformat(o) for o in eval_df["origin_date"].unique())
         fc = state.advance(train_df, eval_df, end)
+        state.datasets = {"train": train_ds.version, "eval": eval_ds.version}
         state.save(d)
         if forecasts_out:
             out = forecasts_out if len(zone or base.zones) == 1 else forecasts_out / f"{z}.parquet"
@@ -408,6 +409,54 @@ def state_advance_cmd(
             f"{z}: {fc['origin_date'].nunique()} origin(s) {fc['origin_date'].min()}.."
             f"{fc['origin_date'].max()}, last fit {state.last_fit}, saved {d}"
         )
+
+
+ALIAS_OPT = typer.Option("champion", help="Registry alias.")
+
+
+@state_app.command("register")
+def state_register_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    model: str = typer.Option("ensemble_hourly_exp", "--model", "-m"),
+    state_dir: Path | None = STATE_DIR_OPT,
+    alias: str | None = typer.Option(None, help="Point this alias at the new version."),
+    description: str | None = typer.Option(None),
+    config: Path = CONFIG_OPT,
+) -> None:
+    """Register a saved state as a new version of se-price-<zone>-hourly."""
+    from pricefc.serving.registry import model_name, register_state
+    from pricefc.serving.state import ModelState
+
+    base = load_config(config)
+    for z in zone or list(base.zones):
+        d = state_dir or base.paths.data_root / "state" / z / model
+        state = ModelState.load(d)
+        version = register_state(base, state, d, alias=alias, description=description)
+        typer.echo(
+            f"{z}: {model_name(z)} version {version} (last origin {state.last_origin})"
+            + (f", alias {alias}" if alias else "")
+        )
+
+
+@state_app.command("pull")
+def state_pull_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    alias: str = ALIAS_OPT,
+    model: str = typer.Option("ensemble_hourly_exp", "--model", "-m"),
+    state_dir: Path | None = STATE_DIR_OPT,
+    config: Path = CONFIG_OPT,
+) -> None:
+    """Replace the local state with the registry version an alias points at."""
+    from pricefc.serving.registry import pull_state, resolve
+    from pricefc.tracking.mlflow_utils import setup_tracking
+
+    base = load_config(config)
+    setup_tracking(base)
+    for z in zone or list(base.zones):
+        d = state_dir or base.paths.data_root / "state" / z / model
+        version = resolve(z, alias)
+        state = pull_state(z, version, d)
+        typer.echo(f"{z}: pulled version {version} ({state.spec}, last origin {state.last_origin})")
 
 
 @app.command()

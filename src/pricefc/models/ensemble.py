@@ -97,6 +97,7 @@ class EnsembleForecaster:
         self._history: list[pd.DataFrame] = []
         self.weight_log: list[dict[str, Any]] = []
         self.memoize = True
+        self.refit_members = True  # False: predict from the members' current state only
 
     def __getstate__(self) -> dict[str, Any]:
         # The training frame is re-supplied by fit() before every predict; not state.
@@ -106,6 +107,7 @@ class EnsembleForecaster:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         state.setdefault("memoize", True)
+        state.setdefault("refit_members", True)
         self.__dict__.update(state)
 
     # -- harness interface ---------------------------------------------------------------
@@ -176,7 +178,8 @@ class EnsembleForecaster:
             assert self._day is not None
             day = pd.Timestamp(self._day)
             month = (day.year, day.month)
-            if member.refit == "every_origin" or self._last_fit[i] != month:
+            due = member.refit == "every_origin" or self._last_fit[i] != month
+            if due and self.refit_members:
                 assert self._train is not None
                 member.fit(self._train)
                 self._last_fit[i] = month

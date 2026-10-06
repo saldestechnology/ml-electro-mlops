@@ -16,13 +16,14 @@ States are pickles: load them only from our own MLflow registry or disk.
 from __future__ import annotations
 
 import contextlib
+import copy
 import importlib.metadata
 import json
 import os
 import pickle
 import platform
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field, fields
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -74,6 +75,17 @@ class ModelState:
     last_origin: date | None = None
     fits: list[FitRecord] = field(default_factory=list)
     history: list[dict[str, Any]] = field(default_factory=list)  # one entry per origin
+    datasets: dict[str, str] = field(default_factory=dict)  # versions of the last advance
+    source_version: str | None = None  # registry version this state was pulled from
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        # States saved before a field existed get its default.
+        for f in fields(self):
+            if f.name not in state and f.default_factory is not MISSING:
+                state[f.name] = f.default_factory()
+            elif f.name not in state:
+                state[f.name] = f.default
+        self.__dict__.update(state)
 
     def __post_init__(self) -> None:
         for m in _walk(self.model):
@@ -131,6 +143,25 @@ class ModelState:
         forecasts, _ = finish_forecasts(self.spec, frames, self.quantiles)
         return forecasts
 
+    def preview(self, rows: pd.DataFrame) -> pd.DataFrame:
+        """Forecast `rows` from the current state without the day's update (no refit, no
+        new prices), on a copy: the state itself is unchanged. For the rows of the last origin
+        served this reproduces the served forecast exactly; for a later origin it is the
+        forecast of a model that has not seen the newest day."""
+        model = copy.deepcopy(self.model)
+        for m in _walk(model):
+            if isinstance(m, EnsembleForecaster):
+                m.refit_members = False
+        if rows["origin_date"].nunique() != 1:
+            raise StateError("preview one origin at a time")
+        pred = model.predict(
+            pd.Timestamp(rows["origin"].iloc[0]),
+            rows.drop(columns=["y", "y_n_periods", "y_is_pt15m"], errors="ignore"),
+        )
+        out = rows[["origin_date", "origin", "target_time", "target_date"]].join(pred)
+        forecasts, _ = finish_forecasts(self.spec, [out], self.quantiles)
+        return forecasts
+
     # -- persistence ---------------------------------------------------------------------
 
     def metadata(self) -> dict[str, Any]:
@@ -144,6 +175,8 @@ class ModelState:
             "last_fit": self.last_fit.isoformat() if self.last_fit else None,
             "last_origin": self.last_origin.isoformat() if self.last_origin else None,
             "origins_served": len(self.history),
+            "datasets": self.datasets,
+            "source_version": self.source_version,
             "git_sha": os.environ.get("PRICEFC_GIT_SHA", "unknown"),
             "saved_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "versions": _versions(),

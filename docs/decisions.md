@@ -381,3 +381,12 @@
   LightGBM refit, 47 s): all 368 origins / 8,832 rows identical to the logged backtest run
   (max abs difference 0.0). State size 14.6 MB per zone. TimesFM and LightGBM ran in one
   process here without the earlier macOS crash (LightGBM is called first at every origin).
+- **Registry**: a version of `se-price-<zone>-hourly` is the model *with its state at one
+  origin* (pyfunc wrapping the state; tags `model_spec`, `last_origin`, `git_sha`). Alias
+  `champion` = the version the forecast flow serves. The daily state stays on the environment's
+  disk (logging 15 MB x 4 zones per day to MLflow would fill the VPS); when the alias moves, the
+  flow pulls that version and catches it up from its own `last_origin`, so a promotion never
+  skips an origin. Registration refuses non-deployable models (TimesFM 3.0 licence).
+- **Checkable versions**: the pyfunc's `predict` forecasts from the stored state without the
+  day's update (no refit, on a copy). For the version's last origin it reproduces the served
+  forecast exactly (verified on SE3: 24/24 rows, max abs difference 0.0).
