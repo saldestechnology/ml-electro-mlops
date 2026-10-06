@@ -5,8 +5,9 @@ Description=pricefc @ENV@ Vault Agent (renders the environment's secrets to tmpf
 Image=docker.io/hashicorp/vault:2.1.1
 Pod=pricefc.pod
 ContainerName=pricefc-vault-agent
-# Bypass the image entrypoint (it drops to uid 100, which could not write files the other
-# containers can read); container root is the unprivileged environment user.
+# The image runs as uid 100, which cannot read the 700 credentials directory or write files the
+# worker can read. Container root is the unprivileged environment user (rootless podman).
+User=0
 Entrypoint=/bin/vault
 Exec=agent -config=/vault/agent/agent.hcl
 Environment=PRICEFC_ENV=@ENV@
