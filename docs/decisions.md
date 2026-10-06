@@ -401,3 +401,17 @@
   stored states' last forecasts reproduced on the VPS data to within 1.2e-4 EUR/MWh (platform
   floating point). So a served forecast on the VPS can differ from a laptop backtest in the
   4th decimal; tests of exact equality are run on one platform.
+
+## 2026-10-06 — Live rows for the forecast origin
+- `pricefc dataset live` builds origin D with the same `DatasetBuilder.from_snapshots(...,
+  weather_kind="true_lead")` and `build_origin` path as the backtest. Target prices for D+1
+  may be absent; the y columns stay null while feature rows remain available for serving.
+- Before building, live coverage requires own prices back through D, neighbour prices for D,
+  and true-lead weather for every hour of D and D+1, including the `single_runs` merge. The
+  live leakage audit perturbs data unavailable at the origin and compares every feature. It
+  checks that the perturbation changed post-origin source values when any exist; it does not
+  require a target change because D+1 prices are normally unpublished at the live origin.
+- Live row columns and dtypes must match the latest true-lead dataset for that zone. Feature
+  code changes therefore require rebuilding datasets before serving. Rows and a manifest with
+  the dataset version, source lineage, coverage and audit report are written under
+  `data/live/<zone>/<origin-date>/`.
