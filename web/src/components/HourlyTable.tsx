@@ -1,6 +1,6 @@
 import type { ForecastHour } from '../api';
 import type { DayLayout } from './chart/scale';
-import { fmtNum } from '../lib/format';
+import { fmtNum, fmtSigned } from '../lib/format';
 import './HourlyTable.css';
 
 const COLS = ['q05', 'q10', 'q25', 'q50', 'q75', 'q90', 'q95'] as const;
@@ -26,6 +26,11 @@ export function HourlyTable({ hours, layout }: { hours: ForecastHour[]; layout: 
                 </th>
               ))}
               {hasActual && <th scope="col">Actual</th>}
+              {hasActual && (
+                <th scope="col" className="hourly__bias">
+                  <abbr title="Bias of the median: q50 − actual">Bias</abbr>
+                </th>
+              )}
               {hasNaive && <th scope="col">Naive 7d</th>}
             </tr>
           </thead>
@@ -43,6 +48,11 @@ export function HourlyTable({ hours, layout }: { hours: ForecastHour[]; layout: 
                     </td>
                   ))}
                   {hasActual && <td className="hourly__actual">{fmtNum(h.actual)}</td>}
+                  {hasActual && (
+                    <td className="hourly__bias">
+                      {fmtSigned(h.actual === null ? null : h.q50 - h.actual)}
+                    </td>
+                  )}
                   {hasNaive && <td>{fmtNum(h.naive_7d)}</td>}
                 </tr>
               );

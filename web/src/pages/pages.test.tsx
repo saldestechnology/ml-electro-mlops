@@ -27,6 +27,20 @@ describe('forecast page', () => {
     expect(screen.getByText('Sample data')).toBeInTheDocument();
   });
 
+  it('summarises the forecast error by part of the day when actuals exist', async () => {
+    renderApp('/');
+    const section = await screen.findByRole('region', { name: /Forecast error/ });
+    expect(within(section).getByText(/over all 24 hours/)).toBeInTheDocument();
+    // the fixture's SE3 night is badly under-forecast: the one figure marked as largest
+    const largest = within(section).getByText('(largest)').closest('div');
+    expect(largest).toHaveTextContent(/Night 00–05/);
+    expect(largest).toHaveTextContent(/−\d/);
+    expect(within(section).getByText('Mean absolute error, median')).toBeInTheDocument();
+    expect(section).toHaveTextContent(/\d+ above q95 · \d+ below q05/);
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('columnheader', { name: 'Bias' })).toBeInTheDocument();
+  });
+
   it('labels the 25-hour DST day and its repeated hour', async () => {
     renderApp('/?zone=SE1');
     expect(await screen.findByText(/25-hour day/)).toBeInTheDocument();
@@ -36,6 +50,8 @@ describe('forecast page', () => {
     // no actuals yet for the newest day: say so, and no actual column
     expect(screen.getByText(/not in the dataset yet/)).toBeInTheDocument();
     expect(within(table).queryByRole('columnheader', { name: 'Actual' })).toBeNull();
+    expect(within(table).queryByRole('columnheader', { name: 'Bias' })).toBeNull();
+    expect(screen.queryByRole('region', { name: /Forecast error/ })).toBeNull();
   });
 
   it('reads out quantiles with the keyboard', async () => {

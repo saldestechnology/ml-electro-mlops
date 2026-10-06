@@ -47,6 +47,12 @@
 .hourly__table td.hourly__actual {
   font-weight: 500;
 }
+.hourly__table .hourly__bias {
+  color: var(--c-fg-2);
+}
+.hourly__table abbr {
+  text-decoration: none;
+}
 .hourly__table tbody tr:hover {
   background: var(--c-hover);
 }

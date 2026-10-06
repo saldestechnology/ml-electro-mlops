@@ -20,9 +20,16 @@
   stroke-width: 1;
   shape-rendering: crispEdges;
 }
-.fan__zero,
 .fan__axis {
   stroke: var(--c-rule-strong);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+/* The fan chart's zero line and baseline: a quiet grey reference, a step above the gridlines
+   and never the colour of a data series (the Actual line uses --c-fg). */
+.fan__zero,
+.fan__base {
+  stroke: var(--c-rule-zero);
   stroke-width: 1;
   shape-rendering: crispEdges;
 }

@@ -146,6 +146,20 @@ function actualPrice(zone: Zone, date: string, hourLocal: number, dup = 0): numb
   return round2(base + noise);
 }
 
+/**
+ * A systematic miss of the median, as a fraction of the day's level, by local hour. Mirrors
+ * staging on 7 Oct 2026, when SE3 was badly under-forecast at night: applied to SE3's newest
+ * forecast day only (which has actuals), so its other days and the scores stay unremarkable.
+ */
+function medianBias(zone: Zone, target: string, today: string, hourLocal: number): number {
+  if (zone !== 'SE3' || target !== addDays(today, -1)) return 0;
+  if (hourLocal <= 5) return -1.1;
+  if (hourLocal <= 9) return -0.25;
+  if (hourLocal <= 16) return -0.45;
+  if (hourLocal <= 21) return -0.1;
+  return -0.2;
+}
+
 function buildForecast(zone: Zone, originDate: string, today: string): Forecast {
   const hasActual = (date: string) => date <= today;
   const target = addDays(originDate, 1);
@@ -163,7 +177,8 @@ function buildForecast(zone: Zone, originDate: string, today: string): Forecast 
     const sigma = 0.3 * level * shape(zone, hourLocal) + 3;
     const median =
       fcLevel * shape(zone, hourLocal) +
-      0.04 * level * normal(`${zone}:${target}:${hourLocal}:${dup}:err`);
+      0.04 * level * normal(`${zone}:${target}:${hourLocal}:${dup}:err`) +
+      medianBias(zone, target, today, hourLocal) * level;
     const q = {} as Record<QuantileKey, number>;
     for (const k of QUANTILE_KEYS) {
       const z = Z[k];

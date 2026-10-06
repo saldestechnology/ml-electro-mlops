@@ -15,6 +15,7 @@
   --c-fg-3: #646464;
   --c-rule: #d6d6d6;
   --c-rule-strong: #0a0a0a;
+  --c-rule-zero: #a3a3a3; /* chart zero/base rule: a reference, never data-coloured */
   --c-band-90: #ececec;
   --c-band-50: #d0d0d0;
   --c-hover: #f0f0f0;
@@ -92,6 +93,7 @@
     --c-fg-3: #9b9b9b;
     --c-rule: #333333;
     --c-rule-strong: #f4f4f4;
+    --c-rule-zero: #5c5c5c;
     --c-band-90: #222222;
     --c-band-50: #383838;
     --c-hover: #1c1c1c;
@@ -113,6 +115,7 @@
   --c-fg-3: #9b9b9b;
   --c-rule: #333333;
   --c-rule-strong: #f4f4f4;
+  --c-rule-zero: #5c5c5c;
   --c-band-90: #222222;
   --c-band-50: #383838;
   --c-hover: #1c1c1c;

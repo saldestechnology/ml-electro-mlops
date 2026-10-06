@@ -11,8 +11,9 @@ import { EmptyState, ErrorState, Loading } from '../components/States';
 import { ZoneSwitcher } from '../components/ZoneSwitcher';
 import { useApi } from '../hooks/useApi';
 import { useStatus } from '../hooks/useStatus';
-import { fmtNum } from '../lib/format';
-import { summarise } from '../lib/summary';
+import { fmtNum, fmtSigned } from '../lib/format';
+import { forecastError, summarise } from '../lib/summary';
+import type { ForecastError } from '../lib/summary';
 import {
   daysBetween,
   formatDateLong,
@@ -85,6 +86,7 @@ function ForecastView({
 }) {
   const layout = dayLayout(forecast.hours);
   const s = summarise(forecast.hours);
+  const err = forecastError(forecast.hours);
   const hasActual = s.hoursWithActual > 0;
   const hasNaive = forecast.hours.some((h) => h.naive_7d !== null);
   const label = (i: number) => layout.slots[i]?.label ?? '';
@@ -133,6 +135,8 @@ function ForecastView({
           />
         </div>
 
+        {err && <ErrorSummary err={err} />}
+
         <HourlyTable hours={forecast.hours} layout={layout} />
       </section>
     </div>
@@ -158,6 +162,57 @@ function Figure({
         {note && <span className="figure__note">{note}</span>}
       </dd>
     </div>
+  );
+}
+
+function ErrorSummary({ err }: { err: ForecastError }) {
+  const coverage =
+    err.hours === err.totalHours
+      ? `all ${String(err.totalHours)} hours`
+      : `${String(err.hours)} of ${String(err.totalHours)} hours`;
+  const outside = err.aboveQ95 + err.belowQ05;
+  return (
+    <section className="fcerr" aria-labelledby="fcerr-title">
+      <h2 id="fcerr-title" className="fcerr__title">
+        Forecast error <span className="unit">EUR/MWh</span>
+      </h2>
+      <p className="fcerr__lede">
+        Bias of the median, q50 − actual, over {coverage}. Negative: the forecast was too low.
+      </p>
+      <dl className="fcerr__parts">
+        {err.parts.map((p) => {
+          const top = p.key === err.largest;
+          return (
+            <div key={p.key} className={`fcerr__cell ${top ? 'fcerr__cell--signal' : ''}`}>
+              <dt className="label">
+                {p.label} <span className="fcerr__hours">{`${pad2(p.from)}–${pad2(p.to)}`}</span>
+              </dt>
+              <dd className="fcerr__value">
+                {fmtSigned(p.bias)}
+                {top && <span className="visually-hidden"> (largest)</span>}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      <dl className="fcerr__day">
+        <div className="fcerr__cell">
+          <dt className="label">Mean absolute error, median</dt>
+          <dd className="fcerr__value">{fmtNum(err.mae)}</dd>
+        </div>
+        <div className="fcerr__cell">
+          <dt className="label">Outside the 90% band</dt>
+          <dd>
+            <span className="fcerr__value">{outside}</span>{' '}
+            <span className="unit">of {err.hours} h</span>
+            <span className="fcerr__note">
+              <span className="nowrap">{err.aboveQ95} above q95</span> ·{' '}
+              <span className="nowrap">{err.belowQ05} below q05</span>
+            </span>
+          </dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 

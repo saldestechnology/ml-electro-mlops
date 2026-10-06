@@ -135,10 +135,10 @@ export function FanChart({ hours, height = 360, title }: Props) {
                 label="clocks forward"
               />
             )}
-            <line y1={ih} y2={ih} x2={iw} className="fan__axis" />
+            <line y1={ih} y2={ih} x2={iw} className="fan__base" />
             {ticks.map((s) => (
               <g key={s.index} transform={`translate(${x(s.index)},${ih})`}>
-                <line y2={5} className="fan__axis" />
+                <line y2={5} className="fan__base" />
                 <text y={20} className="fan__xlabel">
                   {s.label}
                 </text>

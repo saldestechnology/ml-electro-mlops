@@ -27,3 +27,11 @@ export function fmtPct(v: number | null | undefined, digits = 0): string {
 }
 
 export const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
+
+/** A signed figure: "+12.3", "−79.0", "0.0" (true minus, explicit plus). */
+export function fmtSigned(v: number | null | undefined, digits = 1): string {
+  const s = fmtNum(v, digits);
+  return v !== null && v !== undefined && Number.isFinite(v) && s !== fmtNum(0, digits) && v > 0
+    ? `+${s}`
+    : s;
+}
