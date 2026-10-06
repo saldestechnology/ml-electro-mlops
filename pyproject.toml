@@ -23,6 +23,7 @@ dependencies = [
     "lightgbm>=4.7.0",
     "optuna>=5.0.0",
     "matplotlib>=3.11.2",
+    "duckdb>=1.1",
 ]
 
 [project.optional-dependencies]
