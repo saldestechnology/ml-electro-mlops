@@ -12,6 +12,12 @@
 # via `vault operator generate-root` when needed).
 set -euo pipefail
 V=~/bin/vault
+# `vault status` exits 2 when sealed, so capture first (pipefail would mask the grep).
+st=$($V status -format=json 2>/dev/null || true)
+if grep -q '"sealed": *true' <<<"$st"; then
+  echo "Vault is sealed: run 'bin/vault operator unseal' until Unseal Progress reaches the threshold (3 keys)" >&2
+  exit 1
+fi
 read -rsp "Vault root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 $V token lookup >/dev/null
