@@ -35,6 +35,9 @@
   border-left: var(--rule-strong) solid var(--c-rule-strong);
   margin-bottom: var(--s3);
 }
+.forecast__map {
+  margin-top: var(--s5);
+}
 .forecast__awaiting {
   margin: calc(-1 * var(--s1)) 0 var(--s2);
   font-size: var(--t-sm);
@@ -233,8 +236,23 @@
   .forecast__meta .meta {
     grid-column: 1 / -1;
   }
+  /* beside the origin block, smaller: the zone switcher above stays the primary control */
+  .forecast__meta .meta:has(+ .forecast__map) {
+    grid-column: 1;
+  }
+  .forecast__map {
+    grid-column: 2;
+    margin-top: 0;
+  }
+  .forecast__map .smap {
+    max-width: 180px;
+  }
 }
 @media (max-width: 600px) {
+  /* on a phone the map would push the forecast a screen down; the zone switcher suffices */
+  .forecast__map {
+    display: none;
+  }
   .figures {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -3,3 +3,5 @@ coverage
 node_modules
 pnpm-lock.yaml
 src/icons/tabler-subset.json
+src/assets/map/sweden.ts
+scripts/map-data

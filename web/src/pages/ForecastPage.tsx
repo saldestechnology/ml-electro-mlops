@@ -8,6 +8,7 @@ import { HourlyTable } from '../components/HourlyTable';
 import { Icon } from '../components/Icon';
 import { Legend } from '../components/chart/Legend';
 import { EmptyState, ErrorState, Loading } from '../components/States';
+import { SwedenMap } from '../components/SwedenMap';
 import { ZoneSwitcher } from '../components/ZoneSwitcher';
 import { useApi } from '../hooks/useApi';
 import { useStatus } from '../hooks/useStatus';
@@ -90,6 +91,10 @@ function ForecastView({
   const hasActual = s.hoursWithActual > 0;
   const hasNaive = forecast.hours.some((h) => h.naive_7d !== null);
   const label = (i: number) => layout.slots[i]?.label ?? '';
+  const { zones } = useStatus();
+  // the same staleness the zone switcher marks
+  const stale =
+    zones.status === 'ok' ? Object.fromEntries(zones.data.map((z) => [z.zone, z.stale])) : {};
 
   return (
     <div className="grid forecast__body">
@@ -98,6 +103,9 @@ function ForecastView({
         <p className="forecast__day">{formatDateLong(forecast.target_date)}</p>
         <DstNote layout={layout} />
         <MetaBlock zone={zone} forecast={forecast} origins={origins} />
+        <div className="forecast__map">
+          <SwedenMap zone={zone} stale={stale} />
+        </div>
       </aside>
 
       <section className="forecast__main" aria-label="Forecast">

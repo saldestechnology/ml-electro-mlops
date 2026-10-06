@@ -19,6 +19,8 @@
   --c-band-90: #ececec;
   --c-band-50: #d0d0d0;
   --c-hover: #f0f0f0;
+  --c-map-fill: #dcdcdc; /* zone map: unselected zones, and on hover */
+  --c-map-hover: #c4c4c4;
   --c-naive: #6e6e6e;
   --c-signal: #e30613;
   --c-signal-text: #c00510;
@@ -97,6 +99,8 @@
     --c-band-90: #222222;
     --c-band-50: #383838;
     --c-hover: #1c1c1c;
+    --c-map-fill: #2e2e2e;
+    --c-map-hover: #464646;
     --c-naive: #a3a3a3;
     --c-signal: #ff3b3b;
     --c-signal-text: #ff5c55;
@@ -119,6 +123,8 @@
   --c-band-90: #222222;
   --c-band-50: #383838;
   --c-hover: #1c1c1c;
+  --c-map-fill: #2e2e2e;
+  --c-map-hover: #464646;
   --c-naive: #a3a3a3;
   --c-signal: #ff3b3b;
   --c-signal-text: #ff5c55;
