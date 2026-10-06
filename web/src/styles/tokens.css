@@ -1,0 +1,124 @@
+/*
+ * Design tokens. Everything visual derives from these: one typeface, an 8px baseline,
+ * a 12-column grid, black/white/greys and a single signal red for the median.
+ * Contrast (checked): text tokens >= 4.5:1 on --c-bg and --c-surface, the median red
+ * >= 3:1 against both band greys (WCAG 1.4.11 for graphics).
+ */
+:root {
+  color-scheme: light;
+
+  /* colour: light */
+  --c-bg: #ffffff;
+  --c-surface: #f4f4f4;
+  --c-fg: #0a0a0a;
+  --c-fg-2: #3b3b3b;
+  --c-fg-3: #646464;
+  --c-rule: #d6d6d6;
+  --c-rule-strong: #0a0a0a;
+  --c-band-90: #ececec;
+  --c-band-50: #d0d0d0;
+  --c-hover: #f0f0f0;
+  --c-naive: #6e6e6e;
+  --c-signal: #e30613;
+  --c-signal-text: #c00510;
+  --c-invert-bg: #0a0a0a;
+  --c-invert-fg: #ffffff;
+
+  /* type: Switzer only; sizes sit on the 8px baseline (line heights are multiples of 4/8) */
+  --font: 'Switzer', sans-serif;
+  --t-xs: 0.75rem; /* 12 / 16 */
+  --lh-xs: 1rem;
+  --t-sm: 0.875rem; /* 14 / 20 */
+  --lh-sm: 1.25rem;
+  --t-base: 1rem; /* 16 / 24 */
+  --lh-base: 1.5rem;
+  --t-md: 1.25rem; /* 20 / 28 */
+  --lh-md: 1.75rem;
+  --t-lg: 1.75rem; /* 28 / 32 */
+  --lh-lg: 2rem;
+  --t-xl: 2.5rem; /* 40 / 48 */
+  --lh-xl: 3rem;
+  --t-2xl: 3.5rem; /* 56 / 56 -- key figures */
+  --lh-2xl: 3.5rem;
+  --t-3xl: clamp(3.5rem, 9vw, 7rem); /* display -- zone code */
+
+  /* space: 8px unit */
+  --s1: 0.5rem;
+  --s2: 1rem;
+  --s3: 1.5rem;
+  --s4: 2rem;
+  --s5: 3rem;
+  --s6: 4rem;
+  --s7: 6rem;
+
+  /* grid */
+  --cols: 12;
+  --gutter: 1.5rem;
+  --margin: 3rem;
+  --max: 90rem;
+  --rule: 1px;
+  --rule-strong: 2px;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --margin: 2rem;
+    --gutter: 1rem;
+    --t-2xl: 2.75rem;
+    --lh-2xl: 3rem;
+    --t-xl: 2rem;
+    --lh-xl: 2.5rem;
+  }
+}
+
+@media (max-width: 600px) {
+  :root {
+    --margin: 1rem;
+    --t-2xl: 2.25rem;
+    --lh-2xl: 2.5rem;
+    --t-lg: 1.5rem;
+    --lh-lg: 2rem;
+  }
+}
+
+/* colour: dark (system preference unless the user chose light) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --c-bg: #0e0e0e;
+    --c-surface: #181818;
+    --c-fg: #f4f4f4;
+    --c-fg-2: #c9c9c9;
+    --c-fg-3: #9b9b9b;
+    --c-rule: #333333;
+    --c-rule-strong: #f4f4f4;
+    --c-band-90: #222222;
+    --c-band-50: #383838;
+    --c-hover: #1c1c1c;
+    --c-naive: #a3a3a3;
+    --c-signal: #ff3b3b;
+    --c-signal-text: #ff5c55;
+    --c-invert-bg: #f4f4f4;
+    --c-invert-fg: #0e0e0e;
+  }
+}
+
+/* colour: dark (manual) */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --c-bg: #0e0e0e;
+  --c-surface: #181818;
+  --c-fg: #f4f4f4;
+  --c-fg-2: #c9c9c9;
+  --c-fg-3: #9b9b9b;
+  --c-rule: #333333;
+  --c-rule-strong: #f4f4f4;
+  --c-band-90: #222222;
+  --c-band-50: #383838;
+  --c-hover: #1c1c1c;
+  --c-naive: #a3a3a3;
+  --c-signal: #ff3b3b;
+  --c-signal-text: #ff5c55;
+  --c-invert-bg: #f4f4f4;
+  --c-invert-fg: #0e0e0e;
+}

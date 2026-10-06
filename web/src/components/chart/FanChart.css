@@ -1,0 +1,143 @@
+.fan {
+  display: block;
+}
+.fan__plot {
+  width: 100%;
+  min-width: 0;
+}
+.fan__svg {
+  display: block;
+  overflow: visible;
+  font-family: var(--font);
+  touch-action: pan-y;
+}
+.fan__svg:focus-visible {
+  outline: 2px solid var(--c-fg);
+  outline-offset: 4px;
+}
+.fan__grid {
+  stroke: var(--c-rule);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.fan__zero,
+.fan__axis {
+  stroke: var(--c-rule-strong);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.fan__ylabel {
+  fill: var(--c-fg-3);
+  font-size: 12px;
+  text-anchor: end;
+  font-variant-numeric: tabular-nums;
+}
+.fan__xlabel {
+  fill: var(--c-fg-2);
+  font-size: 12px;
+  text-anchor: start;
+  font-variant-numeric: tabular-nums;
+}
+.fan__band90 {
+  fill: var(--c-band-90);
+}
+.fan__band50 {
+  fill: var(--c-band-50);
+}
+.fan__median {
+  fill: none;
+  stroke: var(--c-signal);
+  stroke-width: 2;
+}
+.fan__actual {
+  fill: none;
+  stroke: var(--c-fg);
+  stroke-width: 1.5;
+}
+.fan__naive {
+  fill: none;
+  stroke: var(--c-naive);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.fan__hover {
+  fill: var(--c-hover);
+}
+.fan__capture {
+  fill: transparent;
+  cursor: crosshair;
+}
+.fan__dst line {
+  stroke: var(--c-fg-2);
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+.fan__dst text {
+  fill: var(--c-fg-2);
+  font-size: 11px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--c-fg-2);
+  margin-bottom: var(--s2);
+}
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readout {
+  margin-top: var(--s2);
+  min-height: 4.5rem;
+  border-top: var(--rule) solid var(--c-rule);
+  padding-top: var(--s1);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+}
+.readout__hour {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.readout__note {
+  font-weight: 400;
+  color: var(--c-fg-2);
+}
+.readout__hint {
+  color: var(--c-fg-3);
+}
+.readout__list {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  column-gap: var(--s2);
+}
+.readout__row dt {
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--c-fg-3);
+}
+.readout__row dd {
+  font-variant-numeric: tabular-nums;
+}
+.readout__median dt {
+  color: var(--c-signal-text);
+}
+.readout__median dd {
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .readout__list {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    row-gap: var(--s1);
+  }
+}
+@media (max-width: 420px) {
+  .readout__list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
