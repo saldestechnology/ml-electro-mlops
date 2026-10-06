@@ -58,6 +58,7 @@ PRICE_AREA_OPT = typer.Option(
 ZONE_OPT = typer.Option(None, "--zone", "-z", help="Repeatable. Default: zones in base config.")
 START_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="UTC start date.")
 END_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="UTC end date.")
+LIVE_DAY_OPT = typer.Option(None, "--day", formats=["%Y-%m-%d"], help="Origin date.")
 
 
 def _date(d: datetime | None) -> date | None:
@@ -223,6 +224,41 @@ def dataset_build_cmd(
             f"leakage_audit=passed({len(m['leakage_audit']['origins_checked'])} origins) "
             f"mlflow={run_id}"
         )
+
+
+@dataset_app.command("live")
+def dataset_live_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    day: datetime | None = LIVE_DAY_OPT,
+    config: Path = CONFIG_OPT,
+    ingest_config: Path = INGEST_OPT,
+    features_config: Path = FEATURES_OPT,
+) -> None:
+    """Build and audit feature rows for a live forecast origin."""
+    from zoneinfo import ZoneInfo
+
+    from pricefc.config import load_features_config, load_ingest_config
+    from pricefc.datasets.live import LiveDataError, build_live_rows
+
+    base = load_config(config)
+    feats = load_features_config(features_config)
+    ing = load_ingest_config(ingest_config)
+    origin_day = _date(day) or datetime.now(ZoneInfo(base.timezone)).date()
+    failed = False
+    for z in zone or list(base.zones):
+        try:
+            rows = build_live_rows(base, feats, ing, z, origin_day)
+        except LiveDataError as exc:
+            typer.echo(f"[FAILED] {z}: {exc}", err=True)
+            failed = True
+            continue
+        status = "passed" if rows.report["leakage_audit"]["passed"] else "FAILED"
+        typer.echo(
+            f"[{status}] {z}: rows={len(rows.frame)} path={rows.path} "
+            f"audit=passed({rows.report['leakage_audit']['n_features']} features)"
+        )
+    if failed:
+        raise typer.Exit(1)
 
 
 backtest_app = typer.Typer(no_args_is_help=True, help="Rolling-origin backtests.")

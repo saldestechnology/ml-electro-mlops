@@ -59,6 +59,30 @@ def target_hours(day: date, tz: str) -> pd.DatetimeIndex:
     return pd.date_range(start, end, freq="h", inclusive="left", name="target_time")
 
 
+def _hours_between_days(first: date, last: date, tz: str) -> pd.DatetimeIndex:
+    start = local_day_bounds_utc(first, tz)[0]
+    end = local_day_bounds_utc(last, tz)[1]
+    return pd.date_range(start, end, freq="h", inclusive="left", name="valid_time")
+
+
+def _gap_summary(index: pd.DatetimeIndex) -> str:
+    gaps: list[str] = []
+    start = previous = index[0]
+    for current in index[1:]:
+        if current - previous != pd.Timedelta(hours=1):
+            gaps.append(_format_gap(start, previous))
+            start = current
+        previous = current
+    gaps.append(_format_gap(start, previous))
+    return ", ".join(gaps[:5]) + (", …" if len(gaps) > 5 else "")
+
+
+def _format_gap(first: pd.Timestamp, last: pd.Timestamp) -> str:
+    if first == last:
+        return first.isoformat()
+    return f"{first.isoformat()}..{last.isoformat()}"
+
+
 @dataclass
 class DatasetBuilder:
     base: BaseConfig
@@ -209,20 +233,38 @@ class DatasetBuilder:
     def feature_columns(self, df: pd.DataFrame) -> list[str]:
         return [c for c in df.columns if c not in (*META_COLUMNS, TARGET)]
 
-    def leakage_audit(self, origins: list[date]) -> dict[str, Any]:
+    def leakage_audit(
+        self, origins: list[date], *, require_target_change: bool = True
+    ) -> dict[str, Any]:
         """Perturb all data unavailable at each origin; every feature must stay identical.
 
-        Also asserts that the perturbation reached the target (the D+1 prices), which shows
-        the check is live rather than vacuous.
+        Dataset builds also require the perturbation to change the target. Live origins can
+        have unpublished targets, so they instead require a change to post-origin source data.
         """
         rng = np.random.default_rng(self.features.dataset.leakage_audit.seed)
         leaky: set[str] = set()
         checked: list[str] = []
         target_changed = 0
+        post_origin_rows = 0
+        post_origin_values_changed = 0
+        post_origin_changes_by_origin = 0
         for day in origins:
             t0 = origin_timestamp(day, self.base)
             clean = self.build_origin(day)
             perturbed_sources = {n: s.perturbed_after(t0, rng) for n, s in self.sources.items()}
+            origin_rows = 0
+            origin_changes = 0
+            for name, source in self.sources.items():
+                late = (source.available_at > t0).to_numpy()
+                origin_rows += int(late.sum())
+                if late.any():
+                    before = source.data.loc[late].to_numpy(dtype="float64")
+                    after = perturbed_sources[name].data.loc[late].to_numpy(dtype="float64")
+                    same = (before == after) | (np.isnan(before) & np.isnan(after))
+                    origin_changes += int((~same).sum())
+            post_origin_rows += origin_rows
+            post_origin_values_changed += origin_changes
+            post_origin_changes_by_origin += int(origin_changes > 0)
             dirty = self.build_origin(day, perturbed_sources)
             cols = self.feature_columns(clean)
             a = clean[cols].to_numpy(dtype="float64")
@@ -237,13 +279,70 @@ class DatasetBuilder:
             "n_features": len(cols),
             "leaky_features": sorted(leaky),
             "perturbation_reached_target": target_changed,
-            "passed": not leaky and target_changed == len(origins),
+            "target_change_required": require_target_change,
+            "post_origin_source_rows": post_origin_rows,
+            "post_origin_source_values_changed": post_origin_values_changed,
+            "origins_with_post_origin_source_change": post_origin_changes_by_origin,
+            "passed": not leaky
+            and (
+                target_changed == len(origins)
+                if require_target_change
+                else post_origin_rows == 0 or post_origin_changes_by_origin == len(origins)
+            ),
         }
         if leaky:
             raise LeakageError(report)
-        if target_changed != len(origins):
+        if require_target_change and target_changed != len(origins):
             raise RuntimeError(f"leakage audit is vacuous: target unchanged ({report})")
+        if (
+            not require_target_change
+            and post_origin_rows
+            and post_origin_changes_by_origin != len(origins)
+        ):
+            raise RuntimeError(
+                f"leakage audit is vacuous: post-origin sources unchanged ({report})"
+            )
         return report
+
+    def live_origin_problems(self, day: date) -> list[str]:
+        """Find gaps in the prices and weather that the live origin's features consume."""
+        tz = self.base.timezone
+        cfg = self.features.dataset
+        origin = origin_timestamp(day, self.base)
+        max_rolling_days = (max(cfg.rolling_windows_hours) + 23) // 24
+        history_days = max(*cfg.price_lag_days, cfg.same_hour_mean_days, max_rolling_days)
+        first_price_day = day + timedelta(days=1 - history_days)
+        requirements: dict[str, tuple[pd.DatetimeIndex, list[str]]] = {
+            F.PRICE: (
+                _hours_between_days(first_price_day, day, tz),
+                ["price"],
+            )
+        }
+        for name in self.sources:
+            if name.startswith(f"{F.PRICE}_"):
+                requirements[name] = (_hours_between_days(day, day, tz), ["price"])
+            elif name != F.PRICE:
+                requirements[name] = (
+                    _hours_between_days(day, day + timedelta(days=1), tz),
+                    list(self.sources[name].data.columns),
+                )
+
+        problems: list[str] = []
+        for name, (expected, columns) in requirements.items():
+            source = self.sources[name]
+            view = source.as_of(origin)
+            available_index = pd.DatetimeIndex(view.index)
+            missing = expected.difference(available_index)
+            present = expected.intersection(available_index)
+            if present.size:
+                values = view.reindex(present)[columns]
+                null_rows = values.isna().any(axis=1)
+                missing = missing.union(present[null_rows.to_numpy()])
+            if missing.size:
+                problems.append(
+                    f"{name}: missing {len(missing)} hourly value(s) at {_gap_summary(missing)}"
+                )
+        return problems
 
     def audit_origins(self, first: date, last: date) -> list[date]:
         """Seeded random sample plus both ends and every origin whose target day has 23 or
