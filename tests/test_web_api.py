@@ -244,7 +244,8 @@ def test_forecast_hours_follow_stockholm_dst(
 def test_spa_mount_fallback_and_api_only_mode(
     cfg: BaseConfig, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.delenv("PRICEFC_WEB_DIST", raising=False)
+    # A missing dist directory means API only (a local `pnpm build` must not change this test).
+    monkeypatch.setenv("PRICEFC_WEB_DIST", str(tmp_path / "no-dist"))
     api_only = TestClient(create_app(cfg))
     assert api_only.get("/api/health").status_code == 200
     assert api_only.get("/").status_code == 404

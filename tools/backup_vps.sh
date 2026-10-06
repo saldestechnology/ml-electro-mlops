@@ -2,7 +2,7 @@
 # Pull a backup of one VPS environment onto this machine (the VPS gets no access here).
 #
 #   tools/backup_vps.sh [env ...]          default: staging (add production once it runs)
-#   PRICEFC_BACKUP_DIR=~/Backups/pricefc   where snapshots go (outside the repo)
+#   PRICEFC_BACKUP_DIR=/Volumes/External/Backups/pricefc   where snapshots go (outside the repo)
 #
 # Each run makes a dated snapshot <dir>/<env>/<UTC timestamp>/ with rsync --link-dest against
 # the previous one, so unchanged files are hard links and cost no space. SQLite databases
@@ -14,7 +14,7 @@
 # the owner's operator token; see docs/deployment.md).
 set -euo pipefail
 
-DEST="${PRICEFC_BACKUP_DIR:-$HOME/Backups/pricefc}"
+DEST="${PRICEFC_BACKUP_DIR:-/Volumes/External/Backups/pricefc}"
 KEEP_DAILY=14
 KEEP_WEEKLY=8
 
@@ -52,6 +52,16 @@ prune() {
     [[ "$keep" == *" $snap "* ]] || rm -rf "$snap"
   done
 }
+
+# An unplugged external drive leaves /Volumes/<name> absent (or an empty stub on the system
+# disk); writing there would fill the internal disk and look like a backup. Refuse instead.
+if [[ "$DEST" == /Volumes/* ]]; then
+  vol="/Volumes/$(cut -d/ -f3 <<<"$DEST")"
+  if [[ ! -d "$vol" ]] || [[ "$(stat -f %d "$vol")" == "$(stat -f %d /)" ]]; then
+    echo "[backup] $vol is not mounted; plug in the drive (nothing was backed up)" >&2
+    exit 2
+  fi
+fi
 
 for ENV in "${@:-staging}"; do
   HOST=$(host_for "$ENV")
