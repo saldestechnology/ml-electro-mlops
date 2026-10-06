@@ -15,7 +15,9 @@ weights are equal (cold start).
 
 Member forecasts are memoised per process, keyed by zone, member spec, origin and row count,
 so that several ensemble variants in one backtest run reuse the members' work. A process
-handles one dataset version per zone (the CLI does), so the key is unambiguous.
+handles one dataset version per zone (the CLI does), so the key is unambiguous. A served
+model turns the memo off (`memoize = False`): its members must see every origin themselves,
+or their own state (recalibration buffers) would miss it.
 """
 
 from __future__ import annotations
@@ -94,6 +96,17 @@ class EnsembleForecaster:
         self._day: str | None = None
         self._history: list[pd.DataFrame] = []
         self.weight_log: list[dict[str, Any]] = []
+        self.memoize = True
+
+    def __getstate__(self) -> dict[str, Any]:
+        # The training frame is re-supplied by fit() before every predict; not state.
+        state = self.__dict__.copy()
+        state["_train"] = None
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        state.setdefault("memoize", True)
+        self.__dict__.update(state)
 
     # -- harness interface ---------------------------------------------------------------
 
@@ -158,7 +171,7 @@ class EnsembleForecaster:
             len(features),
             tuple(self.quantiles),
         )
-        if key not in _MEMO:
+        if not self.memoize or key not in _MEMO:
             member = self.members[i]
             assert self._day is not None
             day = pd.Timestamp(self._day)
@@ -168,9 +181,10 @@ class EnsembleForecaster:
                 member.fit(self._train)
                 self._last_fit[i] = month
             pred = member.predict(origin, features)
-            _MEMO[key] = np.sort(
-                pred[[qcol(t) for t in self.quantiles]].to_numpy(dtype="float64"), axis=1
-            )
+            q = np.sort(pred[[qcol(t) for t in self.quantiles]].to_numpy(dtype="float64"), axis=1)
+            if not self.memoize:
+                return q
+            _MEMO[key] = q
         return _MEMO[key]
 
     def _weights_for(self, hour: int) -> np.ndarray:

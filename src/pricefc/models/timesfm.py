@@ -216,9 +216,17 @@ class TimesFMForecaster:
         self.backend = backend
         self.device = device
         self._impl = backend_impl
+        self._impl_injected = backend_impl is not None
         self._history: pd.Series | None = None
         self._cov_history: pd.DataFrame | None = None
         self.interpolated = 0
+
+    def __getstate__(self) -> dict[str, Any]:
+        # A loaded checkpoint is process state (cached by load_backend), not model state.
+        state = self.__dict__.copy()
+        if not self._impl_injected:
+            state["_impl"] = None
+        return state
 
     def _backend(self) -> Backend:
         if self._impl is None:

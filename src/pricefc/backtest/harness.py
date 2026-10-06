@@ -63,6 +63,75 @@ def needs_refit(model: Forecaster, last_fit: date | None, origin: date) -> bool:
     return (origin.year, origin.month) != (last_fit.year, last_fit.month)
 
 
+@dataclass
+class StepResult:
+    """One origin: the forecast frame (before quantile sorting), and the fit if one ran."""
+
+    frame: pd.DataFrame
+    fit: FitRecord | None
+    predict_seconds: float
+
+
+def step(
+    model: Forecaster,
+    train_df: pd.DataFrame,
+    rows: pd.DataFrame,
+    day: date,
+    last_fit: date | None,
+    cols: Sequence[str],
+    *,
+    train_dates: np.ndarray | None = None,
+    train_start: date | None = None,
+) -> StepResult:
+    """Advance `model` by one origin: refit if due on rows published by `day`, then predict
+    `rows` (the evaluation rows of origin `day`). Shared by the backtest and live serving, so
+    a served model goes through exactly the same sequence of calls as in its backtest."""
+    fit = None
+    if needs_refit(model, last_fit, day):
+        if train_dates is None:
+            train_dates = pd.to_datetime(train_df["target_date"]).dt.date.to_numpy()
+        mask = train_dates <= day
+        if train_start is not None:
+            mask &= train_dates >= train_start
+        train = train_df[mask]
+        if train.empty:
+            raise ValueError(f"no training rows for origin {day}")
+        t0 = time.perf_counter()
+        model.fit(train)
+        fit = FitRecord(
+            day.isoformat(),
+            len(train),
+            str(train["target_date"].min()),
+            str(train["target_date"].max()),
+            time.perf_counter() - t0,
+        )
+    origin_ts = pd.Timestamp(rows["origin"].iloc[0])
+    t0 = time.perf_counter()
+    # Models never see the target (or its metadata) at prediction time.
+    pred = model.predict(origin_ts, rows.drop(columns=TARGET_COLUMNS, errors="ignore"))
+    secs = time.perf_counter() - t0
+    if list(pred.columns) != list(cols) or not pred.index.equals(rows.index):
+        raise ValueError(f"{model.name}: prediction shape/columns do not match the contract")
+    out = ["origin_date", "origin", "target_time", "target_date"]
+    if "y" in rows:
+        out.append("y")
+    return StepResult(rows[out].join(pred), fit, secs)
+
+
+def finish_forecasts(
+    model_name: str, frames: list[pd.DataFrame], quantiles: Sequence[float]
+) -> tuple[pd.DataFrame, int]:
+    """Concatenate per-origin frames, reject NaN quantiles, repair crossing by sorting."""
+    cols = quantile_columns(quantiles)
+    forecasts = pd.concat(frames, ignore_index=True)
+    n_nan = int(forecasts[cols].isna().any(axis=1).sum())
+    if n_nan:
+        raise ValueError(f"{model_name}: {n_nan} forecast rows contain NaN quantiles")
+    forecasts, fixed = sort_quantiles(forecasts, quantiles)
+    forecasts.insert(0, "model", model_name)
+    return forecasts, fixed
+
+
 def run_backtest(
     model: Forecaster,
     train_df: pd.DataFrame,
@@ -81,44 +150,23 @@ def run_backtest(
     frames = []
     last_fit: date | None = None
     for day in origins:
-        if needs_refit(model, last_fit, day):
-            mask = train_dates <= day
-            if train_start is not None:
-                mask &= train_dates >= train_start
-            train = train_df[mask]
-            if train.empty:
-                raise ValueError(f"no training rows for origin {day}")
-            t0 = time.perf_counter()
-            model.fit(train)
-            secs = time.perf_counter() - t0
-            result.fit_seconds += secs
-            result.fits.append(
-                FitRecord(
-                    day.isoformat(),
-                    len(train),
-                    str(train["target_date"].min()),
-                    str(train["target_date"].max()),
-                    secs,
-                )
-            )
+        res = step(
+            model,
+            train_df,
+            eval_by_origin[day.isoformat()],
+            day,
+            last_fit,
+            cols,
+            train_dates=train_dates,
+            train_start=train_start,
+        )
+        if res.fit is not None:
+            result.fits.append(res.fit)
+            result.fit_seconds += res.fit.seconds
             last_fit = day
-        rows = eval_by_origin[day.isoformat()]
-        origin_ts = pd.Timestamp(rows["origin"].iloc[0])
-        t0 = time.perf_counter()
-        # Models never see the target (or its metadata) at prediction time.
-        pred = model.predict(origin_ts, rows.drop(columns=TARGET_COLUMNS))
-        result.predict_seconds += time.perf_counter() - t0
-        if list(pred.columns) != cols or not pred.index.equals(rows.index):
-            raise ValueError(f"{model.name}: prediction shape/columns do not match the contract")
-        frame = rows[["origin_date", "origin", "target_time", "target_date", "y"]].join(pred)
-        frames.append(frame)
-    forecasts = pd.concat(frames, ignore_index=True)
-    n_nan = int(forecasts[cols].isna().any(axis=1).sum())
-    if n_nan:
-        raise ValueError(f"{model.name}: {n_nan} forecast rows contain NaN quantiles")
-    forecasts, result.crossing_rows_fixed = sort_quantiles(forecasts, quantiles)
-    forecasts.insert(0, "model", model.name)
-    result.forecasts = forecasts
+        result.predict_seconds += res.predict_seconds
+        frames.append(res.frame)
+    result.forecasts, result.crossing_rows_fixed = finish_forecasts(model.name, frames, quantiles)
     return result
 
 

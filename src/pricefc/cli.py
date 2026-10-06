@@ -353,6 +353,63 @@ def tune_cmd(
         typer.echo(f"{z}: wrote {path} (mlflow run {run_id})")
 
 
+state_app = typer.Typer(no_args_is_help=True, help="Served model state between origins.")
+app.add_typer(state_app, name="state")
+STATE_DIR_OPT = typer.Option(None, "--dir", help="Default: <data_root>/state/<zone>/<model>.")
+UNTIL_OPT = typer.Option(None, formats=["%Y-%m-%d"], help="Default: latest origin in dataset.")
+FIRST_OPT = typer.Option(
+    None, formats=["%Y-%m-%d"], help="Fresh state only. Default: dataset start."
+)
+OUT_OPT = typer.Option(None, "--forecasts-out", help="Write the new forecasts (Parquet).")
+
+
+@state_app.command("advance")
+def state_advance_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    model: str = typer.Option("ensemble_hourly_exp", "--model", "-m"),
+    until: datetime | None = UNTIL_OPT,
+    first_origin: datetime | None = FIRST_OPT,
+    state_dir: Path | None = STATE_DIR_OPT,
+    forecasts_out: Path | None = OUT_OPT,
+    train_version: str | None = VERSION_OPT,
+    eval_version: str | None = VERSION_OPT,
+    config: Path = CONFIG_OPT,
+    models_dir: Path = MODELS_DIR_OPT,
+) -> None:
+    """Load (or start) a model's state and step it through every pending origin up to
+    `--until`, exactly as the backtest would; save it after."""
+    from datetime import date as date_
+
+    from pricefc.backtest.run import latest_dataset
+    from pricefc.config import load_model_params
+    from pricefc.serving.state import META_FILE, ModelState, new_state
+
+    base = load_config(config)
+    for z in zone or list(base.zones):
+        d = state_dir or base.paths.data_root / "state" / z / model
+        eval_ds = latest_dataset(base, z, "true_lead", eval_version)
+        train_df = latest_dataset(base, z, "stitched", train_version).read()
+        eval_df = eval_ds.read()
+        if (d / META_FILE).exists():
+            state = ModelState.load(d)
+            if state.zone != z or state.spec != model:
+                raise typer.BadParameter(f"{d} holds {state.zone}/{state.spec}")
+        else:
+            first = _date(first_origin) or date_.fromisoformat(eval_ds.manifest["origin_first"])
+            state = new_state(model, z, base, load_model_params(models_dir), first_origin=first)
+        end = _date(until) or max(date_.fromisoformat(o) for o in eval_df["origin_date"].unique())
+        fc = state.advance(train_df, eval_df, end)
+        state.save(d)
+        if forecasts_out:
+            out = forecasts_out if len(zone or base.zones) == 1 else forecasts_out / f"{z}.parquet"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            fc.to_parquet(out, index=False)
+        typer.echo(
+            f"{z}: {fc['origin_date'].nunique()} origin(s) {fc['origin_date'].min()}.."
+            f"{fc['origin_date'].max()}, last fit {state.last_fit}, saved {d}"
+        )
+
+
 @app.command()
 def serve() -> None:
     """Run the scheduled Prefect deployments (VPS worker; needs the `serve` extra)."""

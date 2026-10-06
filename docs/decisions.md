@@ -362,3 +362,22 @@
   stops what needs secrets (alerts); forecasting does not depend on it.
 - **Not in Vault**: CI deploy keys stay in GitHub Environments (they are needed before Vault
   is reachable).
+
+## 2026-10-06 — Served model state (M6)
+- **Design**: the champion is stateful (monthly LightGBM refit, 28-day recalibration buffer,
+  ensemble weights learnt from the members' past forecasts, TimesFM context). `ModelState`
+  (`pricefc.serving.state`) holds the model with the harness's bookkeeping (last fit, last
+  origin) and advances it with the harness's own `step`, origin by origin, in order; missed
+  origins are replayed from the evaluation dataset before the new one (`pricefc state
+  advance`). Saved as a pickle plus `state.json` (zone, spec, last origin, git SHA, package
+  versions) after every run.
+- **Fixes needed for this**: the ensemble's per-process memo of member forecasts would let
+  members skip an origin (e.g. after a preview), silently freezing their recalibration
+  buffer; served states turn it off. The ensemble no longer pickles its training frame,
+  TimesFM not its loaded checkpoint, and recalibration drops raw forecasts that left its
+  window (never read again; results unchanged).
+- **Verified on real data (SE3)**: state built for 2025-10-03..2026-09-30 in one process
+  (11 min), saved, loaded in a new process and advanced to 2026-10-05 (incl. the October
+  LightGBM refit, 47 s): all 368 origins / 8,832 rows identical to the logged backtest run
+  (max abs difference 0.0). State size 14.6 MB per zone. TimesFM and LightGBM ran in one
+  process here without the earlier macOS crash (LightGBM is called first at every origin).

@@ -152,9 +152,9 @@ def run_zone(
     )
     outcomes: dict[str, ModelOutcome] = {}
     for spec in models or cfg.models:
-        name, params, train_start = resolve_spec(spec, model_params, cfg.train_start)
-        model = _build(name, params, zone, base, model_params)
-        model.name = spec
+        model, params, train_start = build_forecaster(
+            spec, base, model_params, zone, cfg.train_start
+        )
         res = run_backtest(
             model, train_df, eval_df, origins, base.quantiles, train_start=train_start
         )
@@ -193,6 +193,20 @@ def run_zone(
     if log_to_mlflow:
         _log_compare_run(base, cfg, zone, table, outcomes, eval_ds, dev)
     return outcomes, table
+
+
+def build_forecaster(
+    spec: str,
+    base: BaseConfig,
+    model_params: dict[str, dict[str, Any]],
+    zone: str,
+    default_train_start: date | None = None,
+) -> tuple[Any, dict[str, Any], date | None]:
+    """A fresh model for `spec` (variants allowed): (model, resolved params, train_start)."""
+    name, params, train_start = resolve_spec(spec, model_params, default_train_start)
+    model = _build(name, params, zone, base, model_params)
+    model.name = spec
+    return model, params, train_start
 
 
 def _build(

@@ -52,8 +52,13 @@ class RecalibratedForecaster:
     def _update_offsets(self, train: pd.DataFrame, last: pd.Timestamp) -> None:
         if not self._raw:
             return
-        raw = pd.concat(self._raw, ignore_index=True)
         start = (last - pd.Timedelta(days=self.window_days - 1)).date().isoformat()
+        # `last` only moves forward, so forecasts wholly before the window are never read
+        # again; dropping them bounds a served model's state.
+        self._raw = [r for r in self._raw if r["target_date"].astype(str).max() >= start]
+        if not self._raw:
+            return
+        raw = pd.concat(self._raw, ignore_index=True)
         raw = raw[(raw["target_date"] >= start) & (raw["target_date"] <= last.date().isoformat())]
         known = raw.merge(train[["target_time", "y"]], on="target_time", how="inner")
         days = known["target_date"].nunique()
