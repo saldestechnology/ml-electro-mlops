@@ -80,6 +80,34 @@ describe('performance page', () => {
     expect(screen.getAllByRole('img', { name: /daily pinball loss/ })).toHaveLength(3);
   });
 
+  it('de-emphasises skill and coverage below the minimum sample', async () => {
+    renderApp('/performance');
+    const table = await screen.findByRole('table');
+    expect(screen.getByText(/at least 7 scored days/)).toBeInTheDocument();
+    // SE3 has one scored day: skill and both coverages carry the caveat, muted
+    const caveats = within(table).getAllByText('1 day scored — too early to judge');
+    expect(caveats).toHaveLength(3);
+    for (const c of caveats) expect(c.closest('td')).toHaveClass('matrix__thin');
+    // SE1 has a full month: no caveat, skill at full weight
+    const rows = within(table).getAllByRole('row');
+    const skill = rows.find((r) => r.textContent.startsWith('Skill vs naive 7d'));
+    const cells = within(skill as HTMLElement).getAllByRole('cell');
+    expect(cells[0]).not.toHaveClass('matrix__thin');
+    expect(cells[2]).toHaveClass('matrix__thin');
+  });
+
+  it('marks a single scored day and breaks lines across missing days', async () => {
+    renderApp('/performance');
+    const se3 = await screen.findByRole('img', { name: /SE3 daily pinball loss, 1 day scored/ });
+    expect(se3.querySelectorAll('circle.daily__model')).toHaveLength(1);
+    expect(se3.querySelectorAll('circle.daily__naive')).toHaveLength(1);
+    expect(se3.querySelectorAll('path.fan__median')).toHaveLength(0);
+    // SE2 has a three-day gap: two separate line runs
+    const se2 = screen.getByRole('img', { name: /SE2 daily pinball loss/ });
+    expect(se2.querySelectorAll('path.fan__median')).toHaveLength(2);
+    expect(se2.querySelectorAll('path.fan__naive')).toHaveLength(2);
+  });
+
   it('shows the nothing-scored state when no zone has scores', async () => {
     renderApp('/performance', emptyFetch);
     expect(await screen.findByRole('region', { name: 'Nothing scored yet' })).toBeInTheDocument();

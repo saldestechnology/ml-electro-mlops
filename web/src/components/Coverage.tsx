@@ -1,10 +1,21 @@
 import { fmtNum, fmtPct } from '../lib/format';
 
-/** Observed coverage as a bar on 0–100%, with a tick at the nominal level. */
-export function Coverage({ value, nominal }: { value: number; nominal: number }) {
+/**
+ * Observed coverage as a bar on 0–100%, with a tick at the nominal level. `muted` (too few
+ * scored days to judge) drops the signal red and greys the bar.
+ */
+export function Coverage({
+  value,
+  nominal,
+  muted = false,
+}: {
+  value: number;
+  nominal: number;
+  muted?: boolean;
+}) {
   const diff = value - nominal;
   return (
-    <span className="coverage">
+    <span className={muted ? 'coverage coverage--muted' : 'coverage'}>
       <span className="coverage__value">{fmtPct(value)}</span>
       <span
         className="coverage__track"

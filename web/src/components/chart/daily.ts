@@ -22,3 +22,40 @@ export function dailyDomains(perfs: Performance[]): DailyDomains {
   const nice = scaleLinear().domain([0, max]).nice(4).domain()[1] ?? max;
   return { start: addDays(end, -(days - 1)), days, max: nice };
 }
+
+export interface DailyPoint {
+  i: number; // day index on the shared x axis
+  pinball: number;
+  naive: number;
+}
+
+/** The scored days that fall inside the shared x range, in date order. */
+export function dailyPoints(perf: Performance, domains: DailyDomains): DailyPoint[] {
+  return perf.daily
+    .map((d) => ({
+      i: dayIndex(domains.start, d.origin_date),
+      pinball: d.pinball,
+      naive: d.naive_7d_pinball,
+    }))
+    .filter((p) => p.i >= 0 && p.i < domains.days)
+    .sort((a, b) => a.i - b.i);
+}
+
+/**
+ * Split points into runs of consecutive days. A line is drawn only within a run (two or more
+ * points), so a missing day breaks the line instead of being bridged.
+ */
+export function consecutiveRuns<T extends { i: number }>(points: T[]): T[][] {
+  const runs: T[][] = [];
+  let run: T[] = [];
+  for (const p of points) {
+    const prev = run[run.length - 1];
+    if (prev && p.i !== prev.i + 1) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(p);
+  }
+  if (run.length) runs.push(run);
+  return runs;
+}

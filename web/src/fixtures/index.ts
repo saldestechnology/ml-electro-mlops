@@ -5,8 +5,10 @@
 // fixed one is injected (the tests do). The story they tell:
 // - SE1, SE2: fresh; the latest origin is today and forecasts tomorrow. They also served the
 //   origin before the most recent daylight-saving change, so a 23- or 25-hour day is always
-//   reachable in the origin picker (or is tomorrow itself).
-// - SE3: stale; its last forecast was made two days ago.
+//   reachable in the origin picker (or is tomorrow itself). SE2 missed three origins a week
+//   ago (an outage), so its daily scores have a gap.
+// - SE3: stale and new; its only forecast was made two days ago, so exactly one day is scored
+//   (below the Performance page's minimum sample).
 // - SE4: a champion that started serving today, so nothing has been scored yet.
 // Actual prices reach the dataset with the nightly refresh: delivery days up to today have
 // actuals, tomorrow does not.
@@ -91,9 +93,14 @@ function servingPlan(today: string): Record<Zone, Serving> {
   const fit = sundayOnOrBefore(today);
   return {
     SE1: { origins: withDst(range(start, today)), lastFit: fit },
-    SE2: { origins: withDst(range(start, today)), lastFit: fit },
+    SE2: {
+      origins: withDst(
+        range(start, today).filter((o) => o < addDays(today, -9) || o > addDays(today, -7)),
+      ),
+      lastFit: fit,
+    },
     SE3: {
-      origins: range(start, addDays(today, -2)),
+      origins: [addDays(today, -2)],
       lastFit: sundayOnOrBefore(addDays(today, -2)),
     },
     SE4: { origins: [today], lastFit: today },
