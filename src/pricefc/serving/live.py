@@ -40,6 +40,7 @@ class ForecastResult:
     caught_up: list[date] = field(default_factory=list)  # missed origins served first
     path: Path | None = None
     run_id: str | None = None
+    role: str = "champion"
 
 
 def state_dir(base: BaseConfig, zone: str, model: str, state_root: Path | None = None) -> Path:
@@ -50,8 +51,13 @@ def backups_dir(directory: Path) -> Path:
     return directory.with_name(f"{directory.name}.backups")
 
 
-def forecast_path(base: BaseConfig, zone: str, day: date) -> Path:
-    return base.paths.data_root / "forecasts" / zone / f"{day.isoformat()}.parquet"
+def forecast_path(base: BaseConfig, zone: str, day: date, role: str = "champion") -> Path:
+    root = base.paths.data_root / "forecasts" / zone
+    if role == "challenger":
+        root /= "challenger"
+    elif role != "champion":
+        raise ValueError(f"unknown forecast role {role!r}")
+    return root / f"{day.isoformat()}.parquet"
 
 
 def backup_state(directory: Path, state: ModelState, keep: int) -> Path | None:
@@ -146,6 +152,7 @@ def forecast_origin(
     *,
     model: str = DEFAULT_MODEL,
     alias: str = "champion",
+    role: str | None = None,
     state_root: Path | None = None,
     live: Any = None,
     keep_backups: int = 7,
@@ -157,12 +164,15 @@ def forecast_origin(
     from pricefc.backtest import run as bt_run
     from pricefc.tracking.mlflow_utils import setup_tracking
 
+    role = role or ("champion" if alias == "champion" else "challenger")
+    if role not in {"champion", "challenger"}:
+        raise ValueError(f"unknown forecast role {role!r}")
     setup_tracking(base)
     directory = state_dir(base, zone, model, state_root)
     state, version = ensure_state(zone, model, alias, directory, keep_backups)
 
     if state.last_origin is not None and state.last_origin >= day:
-        path = forecast_path(base, zone, day)
+        path = forecast_path(base, zone, day, role)
         if not path.exists():
             raise StateError(
                 f"{zone}: origin {day} is not after the state's last origin "
@@ -171,7 +181,7 @@ def forecast_origin(
         log.info("already_served", zone=zone, day=str(day), path=str(path))
         written = pd.read_parquet(path)
         made_with = str(written["model_version"].iloc[0]) if len(written) else version
-        return ForecastResult(zone, day, made_with, written, [], path)
+        return ForecastResult(zone, day, made_with, written, [], path, role=role)
 
     train_ds = bt_run.latest_dataset(base, zone, "stitched")
     eval_ds = bt_run.latest_dataset(base, zone, "true_lead")
@@ -219,23 +229,24 @@ def forecast_origin(
     paths: dict[date, Path] = {}
     for origin, frame in forecasts.groupby("origin_date", sort=True):
         d = date.fromisoformat(str(origin))
-        paths[d] = forecast_path(base, zone, d)
+        paths[d] = forecast_path(base, zone, d, role)
         _write_parquet(frame.reset_index(drop=True), paths[d])
     state.save(directory)
 
     today = forecasts[forecasts["origin_date"] == day.isoformat()].reset_index(drop=True)
     caught_up = [d for d in served if d != day]
-    run_id = _log_run(base, state, version, day, today, served, refit, paths[day])
+    run_id = _log_run(base, state, version, day, today, served, refit, paths[day], role)
     log.info(
         "forecast_written",
         zone=zone,
         day=str(day),
         version=version,
+        role=role,
         caught_up=[str(d) for d in caught_up],
         refit=refit,
         path=str(paths[day]),
     )
-    return ForecastResult(zone, day, version, today, caught_up, paths[day], run_id)
+    return ForecastResult(zone, day, version, today, caught_up, paths[day], run_id, role)
 
 
 def _log_run(
@@ -247,6 +258,7 @@ def _log_run(
     served: list[date],
     refit: bool,
     path: Path,
+    role: str,
 ) -> str:
     import mlflow
 
@@ -266,10 +278,11 @@ def _log_run(
             "model_name": model_name(state.zone),
             "model_version": version,
             "model_spec": state.spec,
+            "role": role,
             **{f"dataset.{k}": v for k, v in state.datasets.items()},
         }
     )
-    with start_run("forecast-live", tags, base, run_name=f"{state.zone}-{day}") as run:
+    with start_run("forecast-live", tags, base, run_name=f"{state.zone}-{day}-{role}") as run:
         mlflow.log_params(
             {
                 "model": state.spec,

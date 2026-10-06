@@ -1,5 +1,8 @@
 """TimesFM adapter tests with a fake backend (no torch/checkpoint needed)."""
 
+from types import ModuleType
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,7 +10,13 @@ import pytest
 from pricefc.backtest.harness import run_backtest, select_origins
 from pricefc.backtest.metrics import qcol
 from pricefc.models.baselines import build_model
-from pricefc.models.timesfm import DECILES, TimesFMForecaster, deciles_to_quantiles
+from pricefc.models.timesfm import (
+    DECILES,
+    TimesFMForecaster,
+    _resolve_timesfm3_backend,
+    _TimesFM3,
+    deciles_to_quantiles,
+)
 from tests.test_harness import QS, synthetic_dataset
 
 REV = "0" * 40
@@ -123,3 +132,51 @@ def test_build_model_and_calibration_wrapper_forward_tags() -> None:
     }
     m = build_model("timesfm3", QS, params)  # must not load weights eagerly
     assert m.run_tags()["deployable"] == "false"
+
+
+def test_timesfm3_auto_backend_uses_torch_on_linux_without_mlx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pricefc.models.timesfm.importlib.util.find_spec", lambda _: None)
+    assert _resolve_timesfm3_backend("auto", system="linux") == "torch"
+    assert _resolve_timesfm3_backend("auto", system="darwin") == "torch"
+    monkeypatch.setattr("pricefc.models.timesfm.importlib.util.find_spec", lambda _: object())
+    assert _resolve_timesfm3_backend("auto", system="darwin") == "mlx"
+    assert _resolve_timesfm3_backend("torch", system="darwin") == "torch"
+
+
+def test_timesfm3_adapter_loads_torch_backend_without_importing_mlx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, str | None]] = []
+
+    class FakeForecaster:
+        @classmethod
+        def from_pretrained(cls, _repo: str, *, revision: str, device: str | None) -> Any:
+            calls.append({"revision": revision, "device": device})
+            return cls()
+
+    fake_timesfm3 = ModuleType("timesfm3")
+    fake_timesfm3.TimesFM3Forecaster = FakeForecaster  # type: ignore[attr-defined]
+    monkeypatch.setitem(__import__("sys").modules, "timesfm3", fake_timesfm3)
+    monkeypatch.setattr("pricefc.models.timesfm.importlib.util.find_spec", lambda _: None)
+    monkeypatch.setattr("pricefc.models.timesfm._single_threaded_torch", lambda: None)
+
+    adapter = _TimesFM3(REV, "auto", None)
+
+    assert isinstance(adapter.model, FakeForecaster)
+    assert calls == [{"revision": REV, "device": None}]
+
+
+def test_challenger_spec_uses_only_configured_tfm3_covariates() -> None:
+    from pricefc.config import load_model_params
+
+    params = load_model_params(__import__("pathlib").Path("configs/models"))
+    spec = params["ensemble_hourly_exp_tfm3"]
+    assert spec == {
+        "members": ["lightgbm_tuned_{zone}@calibration=28", "timesfm3_cov"],
+        "weighting": "hourly",
+        "window_days": None,
+    }
+    covariates = params["timesfm3_cov"]["covariates"]
+    assert set(covariates) <= set(synthetic_dataset().columns)

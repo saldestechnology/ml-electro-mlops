@@ -53,7 +53,18 @@ def test_ingest_flow_fails_loudly_on_invalid_snapshots(monkeypatch: pytest.Monke
 def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    base = SimpleNamespace(zones=["SE3", "SE4", "SE1"], timezone="Europe/Stockholm")
+    base = SimpleNamespace(
+        zones=["SE3", "SE4", "SE1"],
+        timezone="Europe/Stockholm",
+        serving=SimpleNamespace(
+            models=[
+                SimpleNamespace(model="ensemble_hourly_exp", alias="champion", role="champion"),
+                SimpleNamespace(
+                    model="ensemble_hourly_exp_tfm3", alias="challenger", role="challenger"
+                ),
+            ]
+        ),
+    )
     monkeypatch.setattr(daily, "_base", lambda: base)
     calls: list[str] = []
 
@@ -65,9 +76,9 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
         calls.append(f"build:{zone}")
         return {"stitched": "s", "true_lead": "t"}
 
-    def forecast(zone: str, day: date) -> dict[str, Any]:
-        calls.append(f"forecast:{zone}:{day}")
-        if zone == "SE4":
+    def forecast(zone: str, day: date, _model: str, _alias: str, role: str) -> dict[str, Any]:
+        calls.append(f"forecast:{role}:{zone}:{day}")
+        if role == "champion" and zone == "SE4":
             raise ValueError("live columns differ\nlong detail")
         return {"version": "1", "rows": 24, "caught_up": [], "path": "p"}
 
@@ -75,6 +86,7 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
     monkeypatch.setattr(daily, "ingest_weather_task", ingest)
     monkeypatch.setattr(daily, "build_datasets_task", build)
     monkeypatch.setattr(daily, "forecast_zone_task", forecast)
+    monkeypatch.setattr("pricefc.serving.registry.resolve_optional", lambda *_, **__: None)
     day = date(2026, 10, 6)
     with pytest.raises(RuntimeError, match=r"SE4.*ValueError: live columns differ") as err:
         daily.forecast_daily.fn(day)
@@ -85,14 +97,18 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
         "ingest:historical_forecast",
         "ingest:single_runs",
         "build:SE3",
-        f"forecast:SE3:{day}",
         "build:SE4",
-        f"forecast:SE4:{day}",
         "build:SE1",
-        f"forecast:SE1:{day}",
+        f"forecast:champion:SE3:{day}",
+        f"forecast:champion:SE4:{day}",
+        f"forecast:champion:SE1:{day}",
     ]
 
-    monkeypatch.setattr(daily, "forecast_zone_task", lambda z, d: {"version": "1"})
+    monkeypatch.setattr(
+        daily,
+        "forecast_zone_task",
+        lambda z, d, _m, _a, _r: {"version": "1"},
+    )
     out = daily.forecast_daily.fn(day)
     assert set(out["zones"]) == {"SE3", "SE4", "SE1"} and out["errors"] == {}
 

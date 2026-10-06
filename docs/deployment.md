@@ -64,18 +64,25 @@ exactly what the origin allows) does, for origin D = today:
 
 1. ingest prices and weather (`previous_runs`, `historical_forecast`, `single_runs`); a failed
    pull is reported but does not stop the run, stale inputs are caught by the live-row checks;
-2. per zone: rebuild the `stitched` and `true_lead` datasets, build the live rows of origin D
-   (`pricefc.datasets.live`), then `pricefc.serving.live.forecast_origin`:
-   - resolve the registry alias `champion` of `se-price-<zone>-hourly`; if the local state is
-     missing or was pulled from another version, back it up and pull that version;
+2. per zone, rebuild the `stitched` and `true_lead` datasets;
+3. serve every configured champion for every zone before starting any configured challenger.
+   Each role builds live rows of origin D (`pricefc.datasets.live`) and calls
+   `pricefc.serving.live.forecast_origin`:
+   - resolve its registry alias in `se-price-<zone>-hourly`; if the local state is missing or
+     was pulled from another version, back it up and pull that version;
    - back up the state, advance it through every missed origin (from the `true_lead` rows) and
      D (from the live rows), write one forecast file per origin served, then save the state;
-   - log a run in the MLflow experiment `forecast-live` (zone, origin, model version, dataset
-     versions, number of origins served, refit) with the day's forecast as artifact.
+   - log a run in the MLflow experiment `forecast-live` with `role=champion` or
+     `role=challenger`, zone, origin, model version, dataset versions, refit and the day's
+     forecast artifact.
 
-One zone failing does not stop the others; the run fails at the end if anything failed. Every
-failed or crashed run (this flow and `ingest-daily`) sends a Telegram alert to "FC Mon" with
-the flow, run and a one-line error (no tracebacks, no secrets).
+The pairs are configured in `configs/base.yaml` under `serving.models`: the champion is
+`ensemble_hourly_exp` / alias `champion`, and the current shadow is
+`ensemble_hourly_exp_tfm3` / alias `challenger`. If a zone has no challenger alias, it is
+skipped with an info log. A challenger failure is logged and sent to Telegram, but does not
+fail or replace any champion result. Champion or ingest failures still fail the flow at the end.
+Other failed or crashed runs (this flow and `ingest-daily`) send a Telegram alert to "FC Mon"
+with the flow, run and a one-line error (no tracebacks, no secrets).
 
 Where things live (data root `~<user>/pricefc/data/` on the host, `/data` in the worker):
 
@@ -84,7 +91,52 @@ Where things live (data root `~<user>/pricefc/data/` on the host, `/data` in the
 | `state/<zone>/ensemble_hourly_exp/` | served state (`state.pkl`, readable `state.json`) |
 | `state/<zone>/ensemble_hourly_exp.backups/<origin>/` | state as it was after `<origin>` (newest 7 kept) |
 | `forecasts/<zone>/<origin_date>.parquet` | D+1 quantile forecasts, with `model_version` and `forecast_made_at` (UTC) |
+| `state/<zone>/ensemble_hourly_exp_tfm3/` | challenger state, independent of the champion state |
+| `forecasts/<zone>/challenger/<origin_date>.parquet` | challenger D+1 quantiles; champion path remains unchanged |
 | `live/<zone>/<origin_date>/` | live feature rows and their manifest |
+
+**Bootstrap the challenger.** Build its state over the full evaluation year on the Apple-silicon
+laptop (`backend: auto` selects MLX there). This is a long run: LightGBM refits as it does for
+the champion and TimesFM runs at every origin. Keep the state outside `data/state` until it has
+been reviewed; this command does not register it:
+
+```bash
+PYTHONPATH=$PWD/src /Users/johan/Documents/ml_code/electricity/.venv/bin/python -m pricefc state advance \
+  --zone SE3 -m ensemble_hourly_exp_tfm3 \
+  --first-origin 2025-10-03 \
+  --dir /private/tmp/pricefc-se3-tfm3/state \
+  --forecasts-out /private/tmp/pricefc-se3-tfm3/forecasts.parquet
+```
+
+The output parquet includes predictions and actual `y` values for pinball scoring. Compare it
+with the champion backtest over exactly the same origins before registering. The saved TimesFM
+3.0 backend stays `auto`: a laptop uses MLX when installed, and Linux resolves it to torch.
+Compare both backends before deployment. If local torch is unavailable, run a one-origin preview
+from the scratch state on the VPS against the MLX output before moving any alias.
+
+**SE3 bootstrap result (2026-10-07).** The full state build completed 368 origins from
+2025-10-03 through 2026-10-05 in 17m 59.7s, using dataset versions
+`20261005-ef8ab3` (stitched) and `20261005-6744bc` (true lead). Mean pinball was 4.8414
+EUR/MWh for the challenger and 5.2615 for the champion backtest over those same origins. A
+torch-on-Mac preview from the saved state for origin 2026-10-05 differed from its MLX quantiles
+by at most 0.000214 EUR/MWh. This is a one-origin parity check; repeat it on the VPS before
+promotion. The scratch build was written to `/private/tmp/pricefc-se3-tfm3` and was not
+registered.
+
+After review, register the built state in the intended environment's MLflow registry:
+
+```bash
+PRICEFC_ENV_CONFIG=configs/envs/staging.yaml pricefc state register \
+  --zone SE3 -m ensemble_hourly_exp_tfm3 \
+  --dir /path/to/reviewed/state --alias challenger
+```
+
+This uses the configured registry and `licence_policy`; confirm the selected environment before
+running it. To promote, point the `champion` alias at the reviewed challenger version and update
+the `champion` entry in `serving.models` to `ensemble_hourly_exp_tfm3` in the deployment config.
+Keep the old champion version under `challenger` for comparison or rollback. Reverse the alias
+and config changes to roll back. Alias and configured spec must match because state directories
+are keyed by model spec.
 
 **Re-run a day.** Re-running is safe: if the state already served D, the forecast written then
 is returned and nothing changes. Retry the whole flow from the Prefect UI, or one zone without

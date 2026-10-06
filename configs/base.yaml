@@ -14,4 +14,13 @@ paths:
 mlflow:
   tracking_uri: sqlite:///mlflow.db
   artifact_root: mlruns
+licence_policy: deployable_only
+serving:
+  models:
+    - model: ensemble_hourly_exp
+      alias: champion
+      role: champion
+    - model: ensemble_hourly_exp_tfm3
+      alias: challenger
+      role: challenger
 compute_env: local-mac

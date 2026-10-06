@@ -64,22 +64,33 @@ def create_app(base: BaseConfig | None = None) -> FastAPI:
         return data.zone_summaries(base)
 
     @app.get("/api/zones/{zone}/origins")
-    def origins(zone: str) -> dict[str, Any]:
+    def origins(
+        zone: str, role: str = Query(default="champion", pattern="^(champion|challenger)$")
+    ) -> dict[str, Any]:
         _require_zone(zone)
-        return {"zone": zone, "origins": data.forecast_origins(base, zone)}
+        return {"zone": zone, "origins": data.forecast_origins(base, zone, role)}
 
     @app.get("/api/zones/{zone}/forecast")
-    def forecast(zone: str, origin: date | None = None) -> dict[str, Any]:
+    def forecast(
+        zone: str,
+        origin: date | None = None,
+        role: str = Query(default="champion", pattern="^(champion|challenger)$"),
+    ) -> dict[str, Any]:
         _require_zone(zone)
-        result = data.forecast_data(base, zone, origin)
+        result = data.forecast_data(base, zone, origin, role)
         if result is None:
             raise HTTPException(status_code=404, detail="Forecast origin not found")
         return result
 
     @app.get("/api/zones/{zone}/performance")
-    def performance(zone: str, days: int = Query(default=30, ge=1, le=3650)) -> dict[str, Any]:
+    def performance(
+        zone: str,
+        days: int = Query(default=30, ge=1, le=3650),
+        role: str = Query(default="champion", pattern="^(champion|challenger)$"),
+    ) -> dict[str, Any]:
         _require_zone(zone)
-        return data.performance_data(base, zone, days, BACKTEST_BASELINES[zone])
+        backtest = BACKTEST_BASELINES[zone] if role == "champion" else {}
+        return data.performance_data(base, zone, days, backtest, role=role)
 
     @app.get("/api/zones/{zone}/model")
     def model(zone: str) -> dict[str, Any]:

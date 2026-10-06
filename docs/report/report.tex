@@ -44,8 +44,10 @@ and every dataset build passes an automated leakage audit. Over a one-year out-o
 model beats the strongest classical baseline (MSTL+ETS) in every zone by 0.78--1.43~EUR/MWh mean
 pinball loss (13--23\%), with block-bootstrap confidence intervals that exclude zero. The
 pretrained foundation model TimesFM~3.0 with weather and calendar covariates is better still
-(a further 12--20\% over LightGBM, significant in every zone), but its weights are licensed for
-non-commercial use only, so it serves as a benchmark rather than a deployable model. The
+(a further 12--20\% over LightGBM, significant in every zone). Its weights are licensed for
+non-commercial use; under the owner's 2026-10-07 educational-project decision it is permitted in
+this non-commercial deployment as a shadow challenger, while remaining tagged
+\code{deployable=false}. The
 deployable TimesFM~2.5 is weaker than LightGBM overall, yet makes complementary errors (it halves
 the night-hour error). An ensemble of the two deployable models, with weights per hour of the
 delivery day learnt only from past forecasts, improves on LightGBM by a further 5--9\% in every
@@ -399,9 +401,12 @@ its residuals).
 backend for Apple silicon. Its weights are licensed for \emph{non-commercial, non-production use
 only}, and fine-tuned versions are derivatives under the same terms.
 \end{itemize}
-The owner decided to evaluate 2.5 as the deployable candidate and 3.0 as a research benchmark.
-The adapter refuses to load 3.0 unless \code{accept\_noncommercial\_licence} is set, and its runs
-are tagged \code{deployable=false} so they can never be promoted.
+The 2026-10-04 owner decision treated 3.0 as a research benchmark. On 2026-10-07 the owner
+superseded that decision: this is a personal educational project, so 3.0 is permitted in the
+non-commercial deployment alongside the Apache-2.0 champion. Registration defaults to
+\code{licence\_policy=deployable\_only}; staging and production opt into
+\code{noncommercial\_ok}. Runs retain \code{deployable=false} and the model licence tag. Revisit
+if use becomes commercial; fine-tunes of 3.0 inherit its licence.
 
 \subsection{Adapter}
 TimesFM plugs into the same harness as every other model. At each origin the context is the last

@@ -1,7 +1,7 @@
 # Quantile-averaging ensembles (M8). Members are model specs; `{zone}` is filled per zone.
 # Weights are learnt only from the members' past forecasts of published days (see
 # pricefc.models.ensemble); equal weights until `min_days` of history exist.
-# Deployable: LightGBM (own) + TimesFM 2.5 (Apache-2.0).
+# Deployable champion: LightGBM (own) + TimesFM 2.5 (Apache-2.0).
 ensemble_equal:
   members: ["lightgbm_tuned_{zone}@calibration=28", timesfm25]
   weighting: equal
@@ -17,8 +17,14 @@ ensemble_hourly_exp:
   members: ["lightgbm_tuned_{zone}@calibration=28", timesfm25]
   weighting: hourly
   window_days: null  # expanding
-# Research only (TimesFM 3.0 is non-commercial): how far can an ensemble go?
+# Research comparison configured for the M8 study: 56-day window and all three members.
 ensemble_research_hourly:
   members: ["lightgbm_tuned_{zone}@calibration=28", timesfm25, timesfm3_cov]
   weighting: hourly
   window_days: 56
+# Non-commercial shadow challenger; same LightGBM spec as the champion and an expanding
+# hourly weight history, matching ensemble_hourly_exp.
+ensemble_hourly_exp_tfm3:
+  members: ["lightgbm_tuned_{zone}@calibration=28", timesfm3_cov]
+  weighting: hourly
+  window_days: null

@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import structlog
 from prefect import flow, task
 
 CONFIG = Path("configs/base.yaml")
 INGEST = Path("configs/ingest.yaml")
 FEATURES = Path("configs/features.yaml")
+log = structlog.get_logger(__name__)
 
 
 def _base() -> Any:
@@ -131,8 +133,14 @@ def build_datasets_task(zone: str) -> dict[str, str]:
 
 
 @task(retries=1, retry_delay_seconds=300)
-def forecast_zone_task(zone: str, day: date) -> dict[str, Any]:
-    """Live rows for the origin, then the served state's forecast (idempotent per day)."""
+def forecast_zone_task(
+    zone: str,
+    day: date,
+    model: str = "ensemble_hourly_exp",
+    alias: str = "champion",
+    role: str = "champion",
+) -> dict[str, Any]:
+    """Live rows for the origin, then one served role's forecast (idempotent per day)."""
     from pricefc.config import load_features_config, load_ingest_config
     from pricefc.datasets.live import build_live_rows
     from pricefc.serving.live import forecast_origin
@@ -140,9 +148,12 @@ def forecast_zone_task(zone: str, day: date) -> dict[str, Any]:
     base = _base()
     feats, ing = load_features_config(FEATURES), load_ingest_config(INGEST)
     rows = build_live_rows(base, feats, ing, zone, day)
-    res = forecast_origin(base, zone, day, live=rows, features=feats, ingest=ing)
+    res = forecast_origin(
+        base, zone, day, model=model, alias=alias, role=role, live=rows, features=feats, ingest=ing
+    )
     return {
         "version": res.model_version,
+        "role": role,
         "rows": len(res.forecasts),
         "caught_up": [d.isoformat() for d in res.caught_up],
         "path": str(res.path),
@@ -157,11 +168,29 @@ def _short(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text[0][:300] if text else ''}"
 
 
+def _alert_challenger_failure(zone: str, day: date, alias: str, exc: BaseException) -> None:
+    """Log and alert a shadow failure without changing the champion flow result."""
+    summary = _short(exc)
+    log.error(
+        "challenger_forecast_failed", zone=zone, day=day.isoformat(), alias=alias, error=summary
+    )
+    try:
+        from pricefc.alerts import send_telegram
+
+        send_telegram(
+            f"forecast-daily challenger failed: {zone} {day.isoformat()} alias={alias}: {summary}"
+        )
+    except Exception:
+        pass
+
+
 @flow(name="forecast-daily", log_prints=True, on_failure=[_alert], on_crashed=[_alert])
 def forecast_daily(day: date | None = None) -> dict[str, Any]:
-    """Morning forecast: fresh prices and weather, rebuilt datasets, then per zone the live
-    rows and the champion's forecast for D+1. One zone failing does not stop the others; the
-    run fails at the end (and alerts) if any zone or ingest step failed."""
+    """Refresh inputs, serve every champion first, then configured shadow challengers.
+
+    Challenger failures are reported and alerted but do not fail or replace champion results.
+    One champion zone failing does not stop the others; ingest or champion errors fail at end.
+    """
     base = _base()
     day = day or datetime.now(ZoneInfo(base.timezone)).date()
     errors: dict[str, str] = {}
@@ -177,13 +206,62 @@ def forecast_daily(day: date | None = None) -> dict[str, Any]:
         except Exception as exc:
             errors[f"ingest:{name}"] = _short(exc)
     zones: dict[str, Any] = {}
+    built: dict[str, dict[str, str]] = {}
     for zone in base.zones:
         try:
             datasets = build_datasets_task(zone)
-            zones[zone] = {"datasets": datasets, **forecast_zone_task(zone, day)}
+            built[zone] = datasets
+            zones[zone] = {"datasets": datasets}
         except Exception as exc:
             errors[zone] = _short(exc)
+
+    served = {item.role: item for item in base.serving.models}
+    champion = served["champion"]
+    for zone in base.zones:
+        if zone not in built:
+            continue
+        try:
+            zones[zone]["champion"] = forecast_zone_task(
+                zone, day, champion.model, champion.alias, champion.role
+            )
+            # Preserve the original top-level zone summary consumed by existing operators.
+            zones[zone].update(zones[zone]["champion"])
+        except Exception as exc:
+            errors[zone] = _short(exc)
+
+    challenger_results: dict[str, Any] = {}
+    for challenger in (item for item in base.serving.models if item.role == "challenger"):
+        for zone in base.zones:
+            if zone not in built:
+                continue
+            try:
+                from pricefc.serving.registry import resolve_optional
+
+                version = resolve_optional(
+                    zone, challenger.alias, tracking_uri=base.mlflow.tracking_uri
+                )
+                if version is None:
+                    log.info(
+                        "challenger_alias_missing",
+                        zone=zone,
+                        alias=challenger.alias,
+                        model=challenger.model,
+                    )
+                    continue
+                result = forecast_zone_task(
+                    zone,
+                    day,
+                    challenger.model,
+                    challenger.alias,
+                    challenger.role,
+                )
+                challenger_results[f"{zone}:{challenger.alias}"] = result
+            except Exception as exc:
+                failure = _short(exc)
+                challenger_results[f"{zone}:{challenger.alias}"] = {"error": failure}
+                _alert_challenger_failure(zone, day, challenger.alias, exc)
     out = {"day": day.isoformat(), "ingest": ingest, "zones": zones, "errors": errors}
+    out["challengers"] = challenger_results
     if errors:
         raise RuntimeError(f"forecast-daily {day}: {errors}")
     print(f"forecast ok: {out}")

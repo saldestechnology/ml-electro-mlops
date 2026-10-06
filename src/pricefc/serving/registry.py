@@ -20,6 +20,7 @@ from typing import Any
 
 import mlflow
 import pandas as pd
+from mlflow.exceptions import MlflowException
 from mlflow.pyfunc.model import PythonModel
 
 from pricefc.config import BaseConfig
@@ -27,6 +28,10 @@ from pricefc.serving.state import META_FILE, ModelState
 
 CHAMPION = "champion"
 STATE_ARTIFACT = "state"
+
+
+class AliasNotFoundError(LookupError):
+    """The registry has no model or version assigned to the requested alias."""
 
 
 def model_name(zone: str) -> str:
@@ -67,8 +72,11 @@ def register_state(
     )
     tags.update({"model_spec": state.spec, "last_origin": str(state.last_origin)})
     tags.update(getattr(state.model, "run_tags", dict)())
-    if tags.get("deployable", "true") != "true":
-        raise PermissionError(f"{state.spec} is not deployable ({tags.get('model_licence')})")
+    if tags.get("deployable", "true") != "true" and base.licence_policy != "noncommercial_ok":
+        raise PermissionError(
+            f"{state.spec} is not deployable ({tags.get('model_licence')}); "
+            "licence_policy is deployable_only"
+        )
     name = model_name(state.zone)
     run_name = f"{state.zone}-{state.spec}-{state.last_origin}"
     with start_run("training", tags, base, run_name=run_name):
@@ -91,7 +99,14 @@ def register_state(
         )
     version = str(info.registered_model_version)
     client = mlflow.MlflowClient()
-    for k in ("model_spec", "last_origin", "git_sha", "git_dirty", "deployable"):
+    for k in (
+        "model_spec",
+        "last_origin",
+        "git_sha",
+        "git_dirty",
+        "deployable",
+        "model_licence",
+    ):
         if k in tags:
             client.set_model_version_tag(name, version, k, tags[k])
     if description:
@@ -101,10 +116,25 @@ def register_state(
     return version
 
 
-def resolve(zone: str, alias: str = CHAMPION) -> str:
+def resolve(zone: str, alias: str = CHAMPION, *, tracking_uri: str | None = None) -> str:
     """The version number `alias` points at."""
-    mv = mlflow.MlflowClient().get_model_version_by_alias(model_name(zone), alias)
+    if tracking_uri is not None:
+        mlflow.set_tracking_uri(tracking_uri)
+    try:
+        mv = mlflow.MlflowClient().get_model_version_by_alias(model_name(zone), alias)
+    except MlflowException as exc:
+        if exc.error_code == "RESOURCE_DOES_NOT_EXIST":
+            raise AliasNotFoundError(f"no {alias!r} alias registered for {zone}") from exc
+        raise
     return str(mv.version)
+
+
+def resolve_optional(zone: str, alias: str, *, tracking_uri: str | None = None) -> str | None:
+    """Return an alias version, or `None` when the alias has not been registered."""
+    try:
+        return resolve(zone, alias, tracking_uri=tracking_uri)
+    except AliasNotFoundError:
+        return None
 
 
 def pull_state(zone: str, version: str, dest: Path) -> ModelState:

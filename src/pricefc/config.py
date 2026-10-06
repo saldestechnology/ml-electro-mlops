@@ -35,6 +35,27 @@ class MlflowConfig(_Strict):
     artifact_root: str
 
 
+class ServedModelConfig(_Strict):
+    model: str
+    alias: str
+    role: Literal["champion", "challenger"]
+
+
+class ServingConfig(_Strict):
+    models: list[ServedModelConfig] = Field(min_length=1)
+
+    @field_validator("models")
+    @classmethod
+    def _unique_aliases_and_champion(cls, v: list[ServedModelConfig]) -> list[ServedModelConfig]:
+        aliases = [model.alias for model in v]
+        if len(set(aliases)) != len(aliases):
+            raise ValueError("served model aliases must be unique")
+        champions = [model for model in v if model.role == "champion"]
+        if len(champions) != 1 or champions[0].alias != "champion":
+            raise ValueError("serving.models must contain exactly one champion alias")
+        return v
+
+
 class BaseConfig(_Strict):
     zones: list[Zone] = Field(min_length=1)
     resolution: Resolution
@@ -45,6 +66,8 @@ class BaseConfig(_Strict):
     seed: int
     paths: PathsConfig
     mlflow: MlflowConfig
+    licence_policy: Literal["deployable_only", "noncommercial_ok"] = "deployable_only"
+    serving: ServingConfig
     compute_env: str
 
     @field_validator("quantiles")

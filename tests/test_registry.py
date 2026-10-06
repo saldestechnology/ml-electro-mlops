@@ -71,8 +71,42 @@ def test_preview_leaves_state_unchanged(tmp_path: Path) -> None:
     )
 
 
-def test_non_deployable_model_is_refused(cfg: BaseConfig, tmp_path: Path) -> None:
+def test_non_deployable_model_is_refused_by_default(cfg: BaseConfig, tmp_path: Path) -> None:
     state, *_ = served(tmp_path)
     state.model.run_tags = lambda: {"deployable": "false", "model_licence": "nc"}  # type: ignore[attr-defined]
     with pytest.raises(PermissionError, match="not deployable"):
         register_state(cfg, state, tmp_path / "SE3" / "ensemble")
+
+
+def test_noncommercial_policy_registers_and_keeps_licence_tags(
+    tmp_path: Path,
+) -> None:
+    from pricefc.serving.registry import resolve_optional
+
+    cfg = load_config(
+        Path("configs/base.yaml"),
+        {
+            "licence_policy": "noncommercial_ok",
+            "mlflow": {
+                "tracking_uri": f"sqlite:///{tmp_path}/m-allowed.db",
+                "artifact_root": str(tmp_path / "art-allowed"),
+            },
+        },
+    )
+    state, *_ = served(tmp_path / "served")
+    state.model.run_tags = lambda: {"deployable": "false", "model_licence": "nc"}  # type: ignore[attr-defined]
+    version = register_state(
+        cfg, state, tmp_path / "served" / "SE3" / "ensemble", alias="challenger"
+    )
+    mv = mlflow.MlflowClient().get_model_version(model_name("SE3"), version)
+    assert mv.tags["deployable"] == "false"
+    assert mv.tags["model_licence"] == "nc"
+    assert resolve_optional("SE3", "challenger") == version
+
+
+def test_missing_alias_is_reported_as_optional(cfg: BaseConfig) -> None:
+    from pricefc.serving.registry import resolve_optional
+    from pricefc.tracking.mlflow_utils import setup_tracking
+
+    setup_tracking(cfg)
+    assert resolve_optional("SE3", "challenger") is None

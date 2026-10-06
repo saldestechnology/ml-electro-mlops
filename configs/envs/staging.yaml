@@ -9,3 +9,4 @@ mlflow:
   tracking_uri: http://localhost:5000   # same pod
   artifact_root: "mlflow-artifacts:"    # stored by the server under /data/mlflow
 compute_env: vps-staging
+licence_policy: noncommercial_ok

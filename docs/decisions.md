@@ -415,3 +415,19 @@
   code changes therefore require rebuilding datasets before serving. Rows and a manifest with
   the dataset version, source lineage, coverage and audit report are written under
   `data/live/<zone>/<origin-date>/`.
+
+## 2026-10-07 — M5 TimesFM 3.0 non-commercial deployment decision (supersedes 2026-10-04)
+- **Owner decision**: "This is a personal project for educational purposes only." The owner
+  permits TimesFM 3.0 under `timesfm-non-commercial-license-v1.0` in this non-commercial
+  deployment. Both options are supported: the Apache-2.0 champion (LightGBM + TimesFM 2.5) and
+  a TimesFM 3.0 challenger running in shadow mode. Revisit this decision if use ever becomes
+  commercial. Fine-tunes of TimesFM 3.0 inherit its licence.
+- **Policy**: registration checks `licence_policy`. The default `deployable_only` rejects
+  non-deployable states; staging and production set `noncommercial_ok`. Registration and run
+  tags still record `deployable=false` and `model_licence=timesfm-non-commercial-license-v1.0`.
+- **Backend portability**: TimesFM 3.0 config uses `backend: auto`; it selects MLX on macOS when
+  installed and torch on Linux. The serialized state keeps `auto`, so the serving host selects
+  its supported backend at load time.
+- **Shadow ensemble**: `ensemble_hourly_exp_tfm3` combines the tuned/calibrated LightGBM member
+  with `timesfm3_cov`, learns hourly weights on an expanding history and writes to a separate
+  challenger forecast path. The champion path and alias remain available for comparison.

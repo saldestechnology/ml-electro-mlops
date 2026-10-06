@@ -51,6 +51,7 @@ def _forecast_frame(
     origin: date,
     target_times: pd.DatetimeIndex,
     quantile_values: list[float] = HAND_FORECAST,
+    model: str = "ensemble_hourly_exp",
 ) -> pd.DataFrame:
     target_local = target_times.tz_convert(TZ)
     frame: dict[str, Any] = {
@@ -59,7 +60,7 @@ def _forecast_frame(
         "target_time": target_times,
         "target_date": [stamp.date().isoformat() for stamp in target_local],
         "y": [float("nan")] * len(target_times),
-        "model": ["ensemble_hourly_exp"] * len(target_times),
+        "model": [model] * len(target_times),
         "model_version": ["17"] * len(target_times),
         "forecast_made_at": [pd.Timestamp("2026-10-06T08:00:00Z")] * len(target_times),
     }
@@ -78,10 +79,15 @@ def _write_forecast(
     origin: date,
     target_times: pd.DatetimeIndex,
     quantile_values: list[float] = HAND_FORECAST,
+    role: str = "champion",
+    model: str = "ensemble_hourly_exp",
 ) -> Path:
-    path = cfg.paths.data_root / "forecasts" / zone / f"{origin.isoformat()}.parquet"
+    root = cfg.paths.data_root / "forecasts" / zone
+    if role == "challenger":
+        root /= role
+    path = root / f"{origin.isoformat()}.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)
-    _forecast_frame(origin, target_times, quantile_values).to_parquet(path, index=False)
+    _forecast_frame(origin, target_times, quantile_values, model).to_parquet(path, index=False)
     return path
 
 
@@ -125,6 +131,15 @@ def test_endpoints_metrics_cache_and_readable_state(
     old_origin = today - timedelta(days=1)
     _write_forecast(cfg, "SE3", old_origin, pd.DatetimeIndex([target_time - pd.Timedelta(days=1)]))
     _write_forecast(cfg, "SE3", today, pd.DatetimeIndex([target_time]))
+    _write_forecast(
+        cfg,
+        "SE3",
+        today,
+        pd.DatetimeIndex([target_time]),
+        [1.0, 3.0, 5.0, 9.0, 13.0, 17.0, 21.0],
+        role="challenger",
+        model="ensemble_hourly_exp_tfm3",
+    )
     _write_forecast(cfg, "SE2", today - timedelta(days=2), pd.DatetimeIndex([target_time]))
 
     state_dir = cfg.paths.data_root / "state" / "SE3" / "ensemble_hourly_exp"
@@ -157,8 +172,13 @@ def test_endpoints_metrics_cache_and_readable_state(
     assert by_zone["SE3"]["latest_origin"] == today.isoformat()
     assert by_zone["SE3"]["stale"] is False
     assert by_zone["SE3"]["last_fit"] == "2026-10-01"
+    assert by_zone["SE3"]["challenger"] == {
+        "latest_origin": today.isoformat(),
+        "model_version": "17",
+    }
     assert by_zone["SE2"]["stale"] is True
     assert by_zone["SE1"]["latest_origin"] is None and by_zone["SE1"]["stale"] is True
+    assert by_zone["SE1"]["challenger"] is None
 
     origins = client.get("/api/zones/SE3/origins").json()
     assert origins == {"zone": "SE3", "origins": [today.isoformat(), old_origin.isoformat()]}
@@ -173,6 +193,13 @@ def test_endpoints_metrics_cache_and_readable_state(
     assert forecast["hours"][0]["naive_7d"] == 6.0
     assert client.get(f"/api/zones/SE3/forecast?origin={old_origin}").status_code == 200
     assert client.get("/api/zones/SE3/forecast?origin=2020-01-01").status_code == 404
+    challenger = client.get("/api/zones/SE3/forecast?role=challenger").json()
+    assert challenger["origin_date"] == today.isoformat()
+    assert challenger["model"] == "ensemble_hourly_exp_tfm3"
+    assert challenger["role"] == "challenger"
+    assert client.get("/api/zones/SE3/origins?role=challenger").json()["origins"] == [
+        today.isoformat()
+    ]
 
     performance = client.get("/api/zones/SE3/performance?days=30").json()
     live = performance["live"]
@@ -186,6 +213,10 @@ def test_endpoints_metrics_cache_and_readable_state(
     assert live["mae_median"] == pytest.approx(2.0)
     assert performance["backtest"] == {"pinball": 5.25, "naive_7d_pinball": 11.61}
     assert performance["daily"][0]["naive_7d_pinball"] == pytest.approx(2.0)
+    challenger_performance = client.get("/api/zones/SE3/performance?days=30&role=challenger").json()
+    assert challenger_performance["role"] == "challenger"
+    assert challenger_performance["n_origins_scored"] == 1
+    assert challenger_performance["backtest"] == {}
 
     model = client.get("/api/zones/SE3/model").json()
     assert model["model_version"] == "17"

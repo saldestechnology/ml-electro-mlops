@@ -5,9 +5,9 @@ covariates) from the harness's training rows, and `predict` feeds the most recen
 `context_hours` of it to a pretrained checkpoint. Like MSTL it refits at every origin, so the
 context always ends at the last published hour (end of local day D).
 
-Checkpoints are pinned by Hugging Face repo id and revision. TimesFM 3.0 weights are licensed
-for non-commercial, non-production use only; such models are tagged `deployable=false` and
-must be explicitly enabled with `accept_noncommercial_licence: true`.
+Checkpoints are pinned by Hugging Face repo id and revision. TimesFM 3.0 weights carry a
+non-commercial licence; such models are tagged `deployable=false` and must be explicitly
+enabled with `accept_noncommercial_licence: true`.
 
 TimesFM emits deciles (0.1..0.9). Other quantiles are interpolated between deciles; the tails
 (below 0.1, above 0.9) are extrapolated from the median assuming a normal shape. Recalibration
@@ -17,6 +17,8 @@ TimesFM emits deciles (0.1..0.9). Other quantiles are interpolated between decil
 from __future__ import annotations
 
 import importlib.metadata
+import importlib.util
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -127,6 +129,7 @@ class _TimesFM25:
 
 class _TimesFM3:
     def __init__(self, revision: str, backend: str, device: str | None) -> None:
+        backend = _resolve_timesfm3_backend(backend)
         if backend == "mlx":
             from timesfm3.mlx import TimesFM3Forecaster as MlxForecaster
 
@@ -152,6 +155,18 @@ class _TimesFM3:
             return_quantiles=True,
         )
         return np.stack([np.asarray(o.quantiles) for o in outs])
+
+
+def _resolve_timesfm3_backend(backend: str, *, system: str | None = None) -> str:
+    """Resolve portable `auto` state to MLX on supported Macs and torch elsewhere."""
+    if backend not in {"auto", "mlx", "torch"}:
+        raise ValueError(f"unknown TimesFM 3.0 backend {backend!r}")
+    if backend != "auto":
+        return backend
+    host = system or sys.platform
+    if host == "darwin" and importlib.util.find_spec("mlx") is not None:
+        return "mlx"
+    return "torch"
 
 
 _BACKENDS: dict[tuple[Any, ...], Backend] = {}
@@ -286,7 +301,9 @@ class TimesFMForecaster:
             "revision": self.revision,
             "context_hours": self.context_hours,
             "covariates": ",".join(self.covariates),
-            "backend": self.backend,
+            "backend": (
+                _resolve_timesfm3_backend(self.backend) if self.version == "3.0" else self.backend
+            ),
             "quantile_mapping": "decile_interp_normal_tails",
         }
 
