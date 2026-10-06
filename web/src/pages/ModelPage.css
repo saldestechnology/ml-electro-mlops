@@ -1,0 +1,107 @@
+.model__head {
+  padding-top: var(--s5);
+  padding-bottom: var(--s5);
+  row-gap: var(--s2);
+}
+.model__head h1 {
+  grid-column: 1 / -1;
+}
+.model__head .lede {
+  grid-column: 1 / span 7;
+}
+.model__cards {
+  row-gap: var(--s5);
+}
+.card {
+  grid-column: span 3;
+  min-width: 0;
+  border-top: var(--rule-strong) solid var(--c-rule-strong);
+  padding-top: var(--s1);
+}
+.card__zone {
+  font-size: var(--t-xl);
+  line-height: var(--lh-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.card__spec {
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-fg-2);
+  margin-bottom: var(--s3);
+  overflow-wrap: anywhere;
+}
+.card__version {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--s3);
+}
+.card__big {
+  font-size: var(--t-2xl);
+  line-height: var(--lh-2xl);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.card__sub {
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  margin-top: var(--s3);
+  padding-bottom: 4px;
+  border-bottom: var(--rule) solid var(--c-rule-strong);
+}
+.card__list {
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+}
+.card__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  column-gap: var(--s1);
+  padding: 4px 0;
+  border-bottom: var(--rule) solid var(--c-rule);
+}
+.card__item dt {
+  color: var(--c-fg-2);
+}
+.card__item dd {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.card__backups {
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  font-variant-numeric: tabular-nums;
+  padding-top: 4px;
+}
+.card__none {
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  padding-top: 4px;
+}
+.card__empty {
+  margin-top: var(--s2);
+  border: var(--rule) dashed var(--c-rule);
+  padding: var(--s2);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-fg-2);
+}
+.card__emptytitle {
+  font-weight: 600;
+  color: var(--c-fg);
+}
+
+@media (max-width: 1100px) {
+  .model__head .lede {
+    grid-column: 1 / -1;
+  }
+  .card {
+    grid-column: span 6;
+  }
+}
+@media (max-width: 600px) {
+  .card {
+    grid-column: 1 / -1;
+  }
+}

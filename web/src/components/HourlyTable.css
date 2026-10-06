@@ -1,0 +1,52 @@
+.hourly__title {
+  font-size: var(--t-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  padding-top: var(--s1);
+  border-top: var(--rule-strong) solid var(--c-rule-strong);
+  margin-bottom: var(--s2);
+}
+.hourly__scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.hourly__table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 36rem;
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  font-variant-numeric: tabular-nums;
+}
+.hourly__table th,
+.hourly__table td {
+  text-align: right;
+  padding: 4px var(--s1);
+  border-bottom: var(--rule) solid var(--c-rule);
+  white-space: nowrap;
+}
+.hourly__table thead th {
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--c-fg-2);
+  border-bottom-color: var(--c-rule-strong);
+  vertical-align: bottom;
+}
+.hourly__table .hourly__hour {
+  text-align: left;
+  padding-left: 0;
+  font-weight: 500;
+}
+.hourly__table td.hourly__median {
+  font-weight: 600;
+}
+.hourly__table th.hourly__median {
+  color: var(--c-signal-text);
+}
+.hourly__table td.hourly__actual {
+  font-weight: 500;
+}
+.hourly__table tbody tr:hover {
+  background: var(--c-hover);
+}

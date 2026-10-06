@@ -1,0 +1,105 @@
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { emptyFetch, pinToday, renderApp } from '../test/render';
+
+// Fixtures follow the clock: pin it to Sat 24 Oct 2026 so tomorrow is the 25-hour DST day.
+beforeEach(() => {
+  pinToday();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('forecast page', () => {
+  it('renders the default zone (SE3) with a stale warning, figures, chart and table', async () => {
+    renderApp('/');
+    expect(await screen.findByText('Friday 23 October 2026')).toBeInTheDocument();
+    expect(screen.getByText('Stale: no forecast made today.')).toBeInTheDocument();
+    expect(screen.getByText(/2 days ago, on Thu 22 Oct/)).toBeInTheDocument();
+    expect(screen.getByText('Daily mean, median')).toBeInTheDocument();
+    expect(screen.getByRole('application', { name: /SE3 price forecast/ })).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    // header + 24 hours on a normal day
+    expect(within(table).getAllByRole('row')).toHaveLength(25);
+    expect(within(table).getByRole('columnheader', { name: 'Actual' })).toBeInTheDocument();
+    // status line marks SE3 as stale
+    expect(screen.getByText(/stale · last forecast 22 Oct/)).toBeInTheDocument();
+    expect(screen.getByText('Sample data')).toBeInTheDocument();
+  });
+
+  it('labels the 25-hour DST day and its repeated hour', async () => {
+    renderApp('/?zone=SE1');
+    expect(await screen.findByText(/25-hour day/)).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(26);
+    expect(within(table).getByRole('rowheader', { name: '02′' })).toBeInTheDocument();
+    // no actuals yet for the newest day: say so, and no actual column
+    expect(screen.getByText(/not in the dataset yet/)).toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: 'Actual' })).toBeNull();
+  });
+
+  it('reads out quantiles with the keyboard', async () => {
+    renderApp('/?zone=SE1');
+    const chart = await screen.findByRole('application');
+    chart.focus();
+    fireEvent.keyDown(chart, { key: 'ArrowRight' });
+    expect(screen.getByText('00:00–01:00')).toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: 'ArrowRight' });
+    fireEvent.keyDown(chart, { key: 'ArrowRight' });
+    fireEvent.keyDown(chart, { key: 'ArrowRight' });
+    expect(screen.getByText(/02′:00–03:00/)).toBeInTheDocument();
+    expect(screen.getByText('q50 median')).toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: 'End' });
+    expect(screen.getByText('23:00–00:00')).toBeInTheDocument();
+  });
+
+  it('switches origin through the picker', async () => {
+    renderApp('/?zone=SE2');
+    const picker = await screen.findByLabelText(/Origin \(forecast made on\)/);
+    await userEvent.selectOptions(picker, '2026-10-20');
+    expect(await screen.findByText('Wednesday 21 October 2026')).toBeInTheDocument();
+    expect(screen.getByText(/Viewing an earlier origin/)).toBeInTheDocument();
+  });
+
+  it('shows a designed empty state when a zone has no forecasts', async () => {
+    renderApp('/?zone=SE2', emptyFetch);
+    expect(await screen.findByText('No forecasts for SE2 yet')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+});
+
+describe('performance page', () => {
+  it('compares all four zones and marks the unscored one', async () => {
+    renderApp('/performance');
+    const table = await screen.findByRole('table');
+    for (const z of ['SE1', 'SE2', 'SE3', 'SE4'])
+      expect(within(table).getByRole('columnheader', { name: z })).toBeInTheDocument();
+    expect(within(table).getAllByText('not scored yet').length).toBeGreaterThan(0);
+    expect(within(table).getByText('4.61')).toBeInTheDocument(); // SE1 backtest reference
+    expect(screen.getByText(/SE4 has no forecast day with published actuals/)).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: /daily pinball loss/ })).toHaveLength(3);
+  });
+
+  it('shows the nothing-scored state when no zone has scores', async () => {
+    renderApp('/performance', emptyFetch);
+    expect(await screen.findByRole('region', { name: 'Nothing scored yet' })).toBeInTheDocument();
+    expect(screen.getAllByText('Nothing scored yet')).toHaveLength(5); // summary + four panels
+  });
+});
+
+describe('model page', () => {
+  it('renders a champion card per zone', async () => {
+    renderApp('/model');
+    await waitFor(() => {
+      expect(screen.getAllByRole('article')).toHaveLength(4);
+    });
+    expect(await screen.findAllByText('ensemble_hourly_exp')).toHaveLength(4);
+    expect(screen.getByText('v5')).toBeInTheDocument();
+    expect(screen.getAllByText('lightgbm')).toHaveLength(4);
+  });
+
+  it('shows per-zone empty cards when nothing is served', async () => {
+    renderApp('/model', emptyFetch);
+    expect(await screen.findAllByText('No served model')).toHaveLength(4);
+  });
+});

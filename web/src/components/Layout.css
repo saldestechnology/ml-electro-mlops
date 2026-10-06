@@ -1,0 +1,105 @@
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: var(--s2);
+  top: var(--s2);
+  z-index: 10;
+  background: var(--c-invert-bg);
+  color: var(--c-invert-fg);
+  padding: var(--s1) var(--s2);
+}
+
+.masthead {
+  align-items: end;
+  padding-top: var(--s4);
+  padding-bottom: var(--s2);
+  row-gap: var(--s2);
+}
+.masthead__mark {
+  grid-column: 1 / span 4;
+  display: flex;
+  flex-direction: column;
+}
+.masthead__name {
+  font-size: var(--t-md);
+  line-height: var(--lh-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.masthead__what {
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--c-fg-2);
+}
+.masthead__nav {
+  grid-column: 5 / span 7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+.masthead__link {
+  font-size: var(--t-base);
+  line-height: var(--lh-base);
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--c-fg-2);
+  padding-bottom: 2px;
+  border-bottom: var(--rule-strong) solid transparent;
+}
+.masthead__link:hover {
+  color: var(--c-fg);
+}
+.masthead__link[aria-current='page'] {
+  color: var(--c-fg);
+  font-weight: 600;
+  border-bottom-color: var(--c-rule-strong);
+}
+.masthead__tools {
+  grid-column: 12 / span 1;
+  justify-self: end;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: var(--rule) solid var(--c-rule);
+  background: transparent;
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  border-color: var(--c-rule-strong);
+}
+
+.colophon {
+  margin-top: var(--s7);
+  padding-top: var(--s2);
+  padding-bottom: var(--s5);
+  border-top: var(--rule) solid var(--c-rule);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--c-fg-3);
+}
+.colophon p {
+  grid-column: 1 / span 6;
+}
+
+@media (max-width: 720px) {
+  .masthead__mark {
+    grid-column: 1 / span 10;
+  }
+  .masthead__tools {
+    grid-column: 11 / span 2;
+    grid-row: 1;
+  }
+  .masthead__nav {
+    grid-column: 1 / -1;
+  }
+  .colophon p {
+    grid-column: 1 / -1;
+  }
+}
