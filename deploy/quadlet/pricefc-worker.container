@@ -8,12 +8,14 @@ Image=localhost/pricefc:current
 Pod=pricefc.pod
 ContainerName=pricefc-worker
 Volume=%h/pricefc/data:/data
-EnvironmentFile=%h/.config/pricefc/secrets.env
+# Secrets rendered by the Vault Agent sidecar (tmpfs); read via pricefc.secrets.
+Volume=%t/pricefc-secrets:/run/secrets:ro
 Environment=PRICEFC_ENV=@ENV@ PRICEFC_ENV_CONFIG=configs/envs/@ENV@.yaml PREFECT_API_URL=http://localhost:4200/api
 Environment="PRICEFC_CRON_MORNING=@CRON_MORNING@" "PRICEFC_CRON_AFTERNOON=@CRON_AFTERNOON@"
 Exec=python -m pricefc serve
 
 [Service]
+ExecStartPre=/usr/bin/mkdir -p -m 700 %t/pricefc-secrets
 # The Prefect server may still be starting; retry instead of failing the unit.
 Restart=always
 RestartSec=30

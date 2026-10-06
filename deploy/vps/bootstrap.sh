@@ -29,8 +29,8 @@ CRON_MORNING="$CRON_MORNING"
 CRON_AFTERNOON="$CRON_AFTERNOON"
 EOF
 chown "$USER_NAME:$USER_NAME" "$H/.config/pricefc/deploy.env"
-# Secrets (notification tokens etc.) live here, mode 600, never in git or the image.
-[[ -e "$H/.config/pricefc/secrets.env" ]] || install -m 600 -o "$USER_NAME" -g "$USER_NAME" /dev/null "$H/.config/pricefc/secrets.env"
+# Secrets come from Vault (deploy/vault/issue-approle.sh puts the agent's credentials here).
+install -d -m 700 -o "$USER_NAME" -g "$USER_NAME" "$H/.config/pricefc/vault"
 
 AK="$H/.ssh/authorized_keys"
 {

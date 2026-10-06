@@ -1,0 +1,23 @@
+[Unit]
+Description=pricefc @ENV@ Vault Agent (renders the environment's secrets to tmpfs)
+
+[Container]
+Image=docker.io/hashicorp/vault:2.1.1
+Pod=pricefc.pod
+ContainerName=pricefc-vault-agent
+# Bypass the image entrypoint (it drops to uid 100, which could not write files the other
+# containers can read); container root is the unprivileged environment user.
+Entrypoint=/bin/vault
+Exec=agent -config=/vault/agent/agent.hcl
+Environment=PRICEFC_ENV=@ENV@
+Volume=%h/.config/pricefc/vault:/vault/agent:ro
+# %t is the user's runtime dir (tmpfs, mode 700): rendered secrets never touch the disk.
+Volume=%t/pricefc-secrets:/secrets
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p -m 700 %t/pricefc-secrets
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

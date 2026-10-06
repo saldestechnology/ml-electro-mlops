@@ -33,12 +33,16 @@ install_units() {
         -e "s|@CRON_AFTERNOON@|$CRON_AFTERNOON|g" "$f" > "$UNITS/$(basename "$f")"
   done
   rm -rf "$tmp"
+  # Vault Agent config (role-id/secret-id next to it are issued once, not shipped).
+  install -d -m 700 "$HOME/.config/pricefc/vault"
+  podman run --rm --entrypoint cat "$CURRENT" /app/deploy/vault/agent.hcl > "$HOME/.config/pricefc/vault/agent.hcl"
   systemctl --user daemon-reload
 }
 
 restart() {
   systemctl --user restart pricefc-pod.service
-  systemctl --user restart pricefc-mlflow.service pricefc-prefect.service pricefc-worker.service
+  systemctl --user restart pricefc-vault-agent.service pricefc-mlflow.service pricefc-prefect.service \
+    pricefc-worker.service
 }
 
 healthy() {
@@ -58,7 +62,7 @@ status() {
   echo "env=$ENV"
   echo "current=$(podman image inspect "$CURRENT" --format '{{index .Labels "org.opencontainers.image.revision"}} {{.Digest}}' 2>/dev/null || echo none)"
   echo "previous=$(podman image inspect "$PREVIOUS" --format '{{index .Labels "org.opencontainers.image.revision"}} {{.Digest}}' 2>/dev/null || echo none)"
-  for s in pricefc-mlflow pricefc-prefect pricefc-worker; do
+  for s in pricefc-vault-agent pricefc-mlflow pricefc-prefect pricefc-worker; do
     echo "$s=$(systemctl --user is-active "$s.service" 2>/dev/null || true)"
   done
 }

@@ -47,16 +47,49 @@ ssh pricefc-vps 'journalctl --user -u pricefc-worker -n 100 --no-pager'
 ssh pricefc-vps '~/bin/deploy rollback'
 ```
 
-Secrets for flows (notification tokens, etc.) go in `~/.config/pricefc/secrets.env` (mode 600)
-on the VPS, never in git or the image.
+## Secrets (HashiCorp Vault)
+
+Vault runs on the VPS as user `vault` (`deploy/vault/`, loopback 127.0.0.1:8200). Secrets live
+at `secret/pricefc/<env>/<name>`; a Vault Agent container in each pod renders them as files in
+`/run/secrets` (tmpfs), read with `pricefc.secrets.get_secret`. Nothing secret goes in git, the
+image or `deploy.env`.
+
+| path | keys | used by |
+|---|---|---|
+| `secret/pricefc/<env>/telegram` | `bot_token`, `chat_id` | alerts (group "FC Mon" only) |
+
+**After a Vault restart (or VPS reboot) the owner must unseal it**: run in your own terminal,
+three times with three different keys,
+
+```bash
+ssh -t pricefc-vault bin/vault operator unseal
+```
+
+The agents pick it up within a minute. Until then forecasts keep running but alerts cannot be
+sent. Check with `ssh pricefc-vault bin/vault status`.
+
+Write or rotate a secret (on the VPS, as `vault`, with the operator token; values from stdin
+as JSON so they never appear in argv or shell history):
+
+```bash
+ssh pricefc-vault 'VAULT_TOKEN=$(cat ~/.vault-operator-token) bin/vault kv put secret/pricefc/staging/telegram -' <<< '{"bot_token":"...","chat_id":"..."}'
+```
+
+AppRole credentials for an environment's agent (issue or rotate):
+`ssh pricefc-vps-root 'bash -s' < deploy/vault/issue-approle.sh <env> <user>`.
 
 ## One-time setup (already done, 2026-10-05)
 
 As root on the VPS: `deploy/vps/bootstrap.sh <env> <user> <mlflow_port> <prefect_port>
 <cron_morning> <cron_afternoon> <ci_pubkey_file> <admin_pubkey_file>` creates the user (locked
-password, linger, no sudo), directories, `deploy.env`, an empty `secrets.env` and
+password, linger, no sudo), directories, `deploy.env`, the Vault credentials directory and
 `authorized_keys`. GitHub Environments `staging` (branch `main`) and `production` (tags `v*`,
 required reviewer) hold `DEPLOY_SSH_KEY`, `VPS_KNOWN_HOSTS` and the `DEPLOY_TARGET` variable.
+
+Vault (as root, once): `deploy/vault/bootstrap.sh <admin_pubkey_file>` creates user `vault` and
+starts the server. The owner then initialises it (`ssh -t pricefc-vault bin/vault operator
+init`, keys kept offline), unseals it and runs `ssh -t pricefc-vault bin/vault-setup` (audit
+log, KV, AppRoles, policies, operator token, revokes the root token).
 
 ## Constraints
 

@@ -1,0 +1,23 @@
+# Quadlet unit for the Vault server (user `vault`, rootless podman).
+[Unit]
+Description=HashiCorp Vault (pricefc secrets)
+After=network-online.target
+
+[Container]
+ContainerName=vault
+Image=docker.io/hashicorp/vault:2.1.1
+# The image entrypoint adds -config=/vault/config (every .hcl in it).
+Exec=server
+PublishPort=127.0.0.1:8200:8200
+# The image runs as vault (100:1000); map the host user onto it so data stays host-owned.
+UserNS=keep-id:uid=100,gid=1000
+Volume=%h/vault/config:/vault/config:ro,Z
+Volume=%h/vault/file:/vault/file:Z
+Volume=%h/vault/logs:/vault/logs:Z
+Environment=VAULT_ADDR=http://127.0.0.1:8200
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

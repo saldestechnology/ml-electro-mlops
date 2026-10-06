@@ -344,3 +344,21 @@
   09:00 needs are initialised by D-1 18Z, ~13 h before the origin.
 - **Parity check**: once Previous Runs has written those hours, the stored live values can be
   compared with the archive (planned in the score flow).
+
+## 2026-10-06 — Secrets in HashiCorp Vault
+- **Server**: Vault 2.1.1 (raft storage) as its own unprivileged user `vault` on the VPS,
+  rootless podman, listening on host loopback only (127.0.0.1:8200, no TLS: never leaves the
+  machine). Audit log on. Owner's choice: Shamir unseal keys (5 shares, threshold 3) held by
+  the owner only, so after any Vault restart secrets are unavailable until the owner unseals;
+  no auto-unseal key is stored on the box. The root token is revoked after setup.
+- **Access**: KV v2 at `secret/`, one path per environment (`secret/pricefc/<env>/*`), one
+  AppRole and read-only policy per environment, so staging cannot read production secrets.
+  Automation uses a `pricefc-operator` periodic token (CRUD on `secret/pricefc/*`, issue
+  AppRole secret-ids; no sys, policy or unseal rights) kept in `~vault` on the VPS.
+- **Delivery**: a Vault Agent sidecar in each environment pod logs in with the AppRole
+  (`~/.config/pricefc/vault/{role-id,secret-id}`, 600) and renders each secret as a file in the
+  user's runtime dir (tmpfs); the worker reads them from `/run/secrets` (`pricefc.secrets`). The
+  pod reaches host loopback via pasta `--map-host-loopback` (169.254.1.2). A sealed Vault only
+  stops what needs secrets (alerts); forecasting does not depend on it.
+- **Not in Vault**: CI deploy keys stay in GitHub Environments (they are needed before Vault
+  is reachable).
