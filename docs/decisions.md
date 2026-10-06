@@ -465,3 +465,82 @@
 - **Shadow ensemble**: `ensemble_hourly_exp_tfm3` combines the tuned/calibrated LightGBM member
   with `timesfm3_cov`, learns hourly weights on an expanding history and writes to a separate
   challenger forecast path. The champion path and alias remain available for comparison.
+
+## 2026-10-06 — Regime-aware ensemble weights (experiment, not adopted)
+
+- **Implementation**: added `hourly_disagree` and `hourly_weather`. Both continue to learn
+  weights only from each member's own stored forecasts after the target date is published.
+  Per-hour thresholds are the expanding-history 75th percentile; each low/high bucket needs
+  14 distinct published days or falls back to that hour's pooled weights. Disagreement is the
+  maximum pairwise member q50 gap divided by the hour's mean absolute price over the last 28
+  published days (floor 1 EUR/MWh). For K>2 this remains the maximum pairwise gap.
+- **Weather feature**: uses the existing `wz_wind_speed_100m_mean`. At each hour the score is
+  the absolute difference between the D+1 feature and the already-known same-hour feature for
+  D, from the previous forecast or the published training row when a prior evaluation forecast
+  is unavailable. No dataset rebuild was needed.
+- **Backtest protocol**: full runs used the latest full champion run's train/eval versions,
+  368 origins from 2025-10-03 through 2026-10-05 in every zone. The variants and champion ran
+  together per zone so member forecasts were memoized once:
+
+  | Zone | Stitched train | True-lead eval |
+  |---|---|---|
+  | SE1 | `20261005-618824` | `20261005-cc48b9` |
+  | SE2 | `20261005-363144` | `20261005-f3a195` |
+  | SE3 | `20261005-ef8ab3` | `20261005-6744bc` |
+  | SE4 | `20261005-c262ba` | `20261005-d38638` |
+
+- **Overall results**: pinball means and their 95% CIs are block-bootstrap estimates of daily
+  mean pinball (seven-day circular blocks). Differences are paired against the champion;
+  negative favors the variant. DM p-values are two-sided, unadjusted.
+
+  | Zone | Champion | Disagreement | Weather |
+  |---|---:|---:|---:|
+  | SE1 | 4.590 [3.946, 5.247] | 4.608 [3.965, 5.265]; Δ +0.018 [+0.005, +0.031], p=.0063 | 4.597 [3.949, 5.263]; Δ +0.007 [-0.015, +0.035], p=.454 |
+  | SE2 | 4.505 [3.820, 5.203] | 4.516 [3.829, 5.212]; Δ +0.010 [-0.003, +0.023], p=.084 | 4.503 [3.819, 5.197]; Δ -0.003 [-0.019, +0.014], p=.800 |
+  | SE3 | 5.262 [4.865, 5.674] | 5.270 [4.879, 5.686]; Δ +0.009 [+0.001, +0.018], p=.049 | 5.258 [4.867, 5.671]; Δ -0.004 [-0.023, +0.014], p=.685 |
+  | SE4 | 6.413 [5.875, 7.055] | 6.415 [5.879, 7.059]; Δ +0.002 [-0.016, +0.018], p=.783 | 6.414 [5.878, 7.055]; Δ +0.001 [-0.016, +0.016], p=.946 |
+
+- **Regime-change days**: labels use the strictly prior expanding 90th percentile after a
+  28-day warm-up. Wind change is the absolute day-over-day change in daily mean
+  `wz_wind_speed_100m_mean`; disagreement is daily mean absolute q50 gap. A score must exceed
+  the cutoff, so ties do not inflate the event set. Table entries are paired Δ vs champion,
+  95% block-bootstrap CI, and unadjusted DM p-value.
+
+  | Zone | Wind-change days | Disagreement Δ [95% CI], p | Weather Δ [95% CI], p |
+  |---|---:|---:|---:|
+  | SE1 | 27 | +0.009 [-0.018, +0.043], .529 | +0.013 [-0.047, +0.088], .716 |
+  | SE2 | 30 | +0.008 [-0.019, +0.034], .606 | -0.016 [-0.088, +0.056], .691 |
+  | SE3 | 27 | +0.004 [-0.022, +0.030], .771 | -0.083 [-0.215, +0.033], .195 |
+  | SE4 | 34 | +0.001 [-0.032, +0.036], .965 | +0.003 [-0.063, +0.074], .934 |
+
+  | Zone | Member-disagreement days | Disagreement Δ [95% CI], p | Weather Δ [95% CI], p |
+  |---|---:|---:|---:|
+  | SE1 | 35 | +0.027 [-0.034, +0.090], .399 | +0.005 [-0.141, +0.206], .949 |
+  | SE2 | 36 | +0.068 [-0.018, +0.150], .114 | -0.005 [-0.138, +0.111], .943 |
+  | SE3 | 33 | -0.005 [-0.053, +0.041], .845 | +0.053 [-0.045, +0.146], .295 |
+  | SE4 | 40 | -0.039 [-0.161, +0.041], .423 | -0.018 [-0.105, +0.060], .764 |
+
+- **Night hours (00-05)**: neither variant beat the champion consistently; every difference CI
+  includes zero.
+
+  | Zone | Disagreement Δ [95% CI], p | Weather Δ [95% CI], p |
+  |---|---:|---:|
+  | SE1 | +0.005 [-0.008, +0.020], .411 | +0.002 [-0.006, +0.009], .594 |
+  | SE2 | +0.004 [-0.005, +0.012], .426 | +0.009 [-0.001, +0.020], .141 |
+  | SE3 | +0.003 [-0.009, +0.016], .654 | +0.007 [-0.001, +0.016], .114 |
+  | SE4 | +0.012 [-0.005, +0.031], .248 | +0.007 [-0.009, +0.022], .421 |
+- **Verdict: do not adopt**. Weather weighting has tiny, uncertain overall gains in SE2/SE3,
+  but loses slightly in SE1/SE4 and does not improve consistently on either regime subset.
+  Disagreement weighting is worse overall in all four zones; its unadjusted p-values in SE1
+  and SE3 are .006 and .049, both in the harmful direction. We tried two conditional
+  variants across four zones and four slices (32 candidate comparisons), without multiplicity
+  correction. These results are exploratory; the borderline p-values are not evidence to
+  promote a variant. The optional gated scheme was not tried.
+- **Coverage limitation**: the eval data stops at origin 2026-10-05 (targets through 2026-10-06),
+  so the 2026-10-07 SE3 case (origin 2026-10-06) is absent and cannot be scored here.
+- **Next**: keep the champion unchanged and run this frozen comparison prospectively as
+  additional true-lead origins arrive, especially on abrupt wind changes. Revisit conditional
+  weighting only with more independent regime-change cases.
+- Detailed per-slice means, CIs, DM results, and all 12 full-run IDs: [report table](report/regime_ensemble_2026-10-06.md), [CSV](report/regime_ensemble_2026-10-06.csv), [run IDs](report/regime_ensemble_run_ids.json). The report is reproduced by `tools/analyze_regime_backtest.py`.
+
+- **Code**: kept on branch `exp-regime-weights` (commit 6a6ffd1), not merged: it adds unused weighting schemes to the class whose pickled states are served. The TimesFM 3.0 challenger (weather-aware member, -7% to -15% pinball in every zone) addressed the same failure where reweighting could not.
