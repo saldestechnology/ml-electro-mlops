@@ -20,6 +20,7 @@ publish release vX.Y.Z ──► production: same image digest, after approval (
   | MLflow (loopback) | 127.0.0.1:5000 | 127.0.0.1:5100 |
   | Prefect UI (loopback) | 127.0.0.1:4200 | 127.0.0.1:4300 |
   | ingest schedule (Stockholm) | 08:15, 13:35 | 08:00, 13:20 |
+  | forecast schedule (Stockholm) | 09:05 | 09:05 |
   | data | `~pricefc/pricefc/` | `~pricefc-staging/pricefc/` |
 
 - **Deploy**: GitHub Actions SSHes in with an environment-specific key that is bound to
@@ -46,6 +47,64 @@ ssh pricefc-vps '~/bin/deploy status'
 ssh pricefc-vps 'journalctl --user -u pricefc-worker -n 100 --no-pager'
 ssh pricefc-vps '~/bin/deploy rollback'
 ```
+
+## Morning forecast (`forecast-daily`)
+
+The Prefect flow `forecast-daily` (deployment `<env>-forecast`, cron `PRICEFC_CRON_FORECAST`,
+default `5 9 * * *` Europe/Stockholm, i.e. just after the 09:00 origin so live inputs are
+exactly what the origin allows) does, for origin D = today:
+
+1. ingest prices and weather (`previous_runs`, `historical_forecast`, `single_runs`); a failed
+   pull is reported but does not stop the run, stale inputs are caught by the live-row checks;
+2. per zone: rebuild the `stitched` and `true_lead` datasets, build the live rows of origin D
+   (`pricefc.datasets.live`), then `pricefc.serving.live.forecast_origin`:
+   - resolve the registry alias `champion` of `se-price-<zone>-hourly`; if the local state is
+     missing or was pulled from another version, back it up and pull that version;
+   - back up the state, advance it through every missed origin (from the `true_lead` rows) and
+     D (from the live rows), write one forecast file per origin served, then save the state;
+   - log a run in the MLflow experiment `forecast-live` (zone, origin, model version, dataset
+     versions, number of origins served, refit) with the day's forecast as artifact.
+
+One zone failing does not stop the others; the run fails at the end if anything failed. Every
+failed or crashed run (this flow and `ingest-daily`) sends a Telegram alert to "FC Mon" with
+the flow, run and a one-line error (no tracebacks, no secrets).
+
+Where things live (data root `~<user>/pricefc/data/` on the host, `/data` in the worker):
+
+| path | content |
+|---|---|
+| `state/<zone>/ensemble_hourly_exp/` | served state (`state.pkl`, readable `state.json`) |
+| `state/<zone>/ensemble_hourly_exp.backups/<origin>/` | state as it was after `<origin>` (newest 7 kept) |
+| `forecasts/<zone>/<origin_date>.parquet` | D+1 quantile forecasts, with `model_version` and `forecast_made_at` (UTC) |
+| `live/<zone>/<origin_date>/` | live feature rows and their manifest |
+
+**Re-run a day.** Re-running is safe: if the state already served D, the forecast written then
+is returned and nothing changes. Retry the whole flow from the Prefect UI, or one zone without
+Prefect inside the worker container:
+
+```bash
+pricefc forecast -z SE3                    # today
+pricefc forecast -z SE3 --day 2026-10-06   # a given origin (must be after the state's last one)
+```
+
+A missed day needs no action: the next run catches it up (from the `true_lead` dataset) before
+forecasting D, and writes its forecast file too.
+
+**Roll back the state.** To recompute a day already served (e.g. after bad live inputs), restore
+the backup taken before it, then re-run. Forecasts for days after the restored origin are
+recomputed and overwritten; the state keeps its `source_version`, so it is not pulled again.
+
+```bash
+cd ~/pricefc/data/state/SE3
+ls ensemble_hourly_exp.backups/            # one directory per origin, newest last
+mv ensemble_hourly_exp ensemble_hourly_exp.bad
+cp -a ensemble_hourly_exp.backups/2026-10-05 ensemble_hourly_exp
+pricefc forecast -z SE3 --day 2026-10-06
+```
+
+Moving the `champion` alias to another registered version is picked up by the next run (pulled,
+then caught up from that version's last origin); to go back to the previous champion, move the
+alias back.
 
 ## Secrets (HashiCorp Vault)
 

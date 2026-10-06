@@ -459,6 +459,50 @@ def state_pull_cmd(
         typer.echo(f"{z}: pulled version {version} ({state.spec}, last origin {state.last_origin})")
 
 
+DAY_OPT = typer.Option(None, "--day", formats=["%Y-%m-%d"], help="Origin day. Default: today.")
+
+
+@app.command("forecast")
+def forecast_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    day: datetime | None = DAY_OPT,
+    model: str = typer.Option("ensemble_hourly_exp", "--model", "-m"),
+    alias: str = ALIAS_OPT,
+    config: Path = CONFIG_OPT,
+    ingest_config: Path = INGEST_OPT,
+    features_config: Path = FEATURES_OPT,
+) -> None:
+    """Forecast D+1 from origin --day with the served state (no Prefect, no ingest): pulls the
+    alias's version if needed, builds live rows, catches up missed origins. Re-running a day
+    already served prints the forecast written then."""
+    from zoneinfo import ZoneInfo
+
+    from pricefc.config import load_features_config, load_ingest_config
+    from pricefc.serving.live import forecast_origin
+
+    base = load_config(config)
+    feats = load_features_config(features_config)
+    ing = load_ingest_config(ingest_config)
+    origin = _date(day) or datetime.now(ZoneInfo(base.timezone)).date()
+    failed = []
+    for z in zone or list(base.zones):
+        try:
+            res = forecast_origin(
+                base, z, origin, model=model, alias=alias, features=feats, ingest=ing
+            )
+        except Exception as exc:
+            typer.echo(f"{z}: FAILED {type(exc).__name__}: {exc}", err=True)
+            failed.append(z)
+            continue
+        caught = ", ".join(str(d) for d in res.caught_up) or "none"
+        typer.echo(
+            f"{z}: {len(res.forecasts)} rows for origin {origin} (version {res.model_version}, "
+            f"caught up: {caught}) -> {res.path}"
+        )
+    if failed:
+        raise typer.Exit(1)
+
+
 @app.command()
 def serve() -> None:
     """Run the scheduled Prefect deployments (VPS worker; needs the `serve` extra)."""
