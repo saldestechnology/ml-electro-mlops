@@ -390,3 +390,14 @@
 - **Checkable versions**: the pyfunc's `predict` forecasts from the stored state without the
   day's update (no refit, on a copy). For the version's last origin it reproduces the served
   forecast exactly (verified on SE3: 24/24 rows, max abs difference 0.0).
+- **Initial states, all zones**: built on the laptop over 2025-10-03..2026-10-05; each
+  reproduces its zone's backtest run exactly (368 origins, 8,832 rows, max abs difference
+  0.0). Sizes 6.6-14 MB. Registered on staging as version 1 of `se-price-se{1..4}-hourly`,
+  alias `champion` (registered from the deployed image, git `23e161c`).
+- **Staging data**: raw history (876 snapshot files, 58 MB) merged into staging's raw store;
+  datasets rebuilt there. Identical to the laptop's except sin/cos features (hour, day of year,
+  wind direction), which differ by at most 1.1e-16 (1 ULP; macOS vs Linux libm).
+- **Linux container**: TimesFM + LightGBM in one process ran without the macOS crash; the
+  stored states' last forecasts reproduced on the VPS data to within 1.2e-4 EUR/MWh (platform
+  floating point). So a served forecast on the VPS can differ from a laptop backtest in the
+  4th decimal; tests of exact equality are run on one platform.

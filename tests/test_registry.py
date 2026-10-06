@@ -36,13 +36,13 @@ def served(tmp_path: Path) -> tuple[ModelState, pd.DataFrame, list[date], pd.Dat
     state = ModelState(champion_like(), "SE3", "ens", QS, first_origin=origins[0])
     fc = state.advance(df, df, origins[8])
     state.datasets = {"train": "t1", "eval": "e1"}
-    state.save(tmp_path / "state")
+    state.save(tmp_path / "SE3" / "ensemble")
     return state, df, origins, fc
 
 
 def test_register_pull_and_continue_exactly(cfg: BaseConfig, tmp_path: Path) -> None:
     state, df, origins, served_fc = served(tmp_path)
-    version = register_state(cfg, state, tmp_path / "state", alias="champion")
+    version = register_state(cfg, state, tmp_path / "SE3" / "ensemble", alias="champion")
     assert resolve("SE3") == version == "1"
     mv = mlflow.MlflowClient().get_model_version(model_name("SE3"), version)
     assert mv.tags["last_origin"] == str(origins[8]) and mv.tags["model_spec"] == "ens"
@@ -64,7 +64,7 @@ def test_register_pull_and_continue_exactly(cfg: BaseConfig, tmp_path: Path) -> 
 
 def test_preview_leaves_state_unchanged(tmp_path: Path) -> None:
     state, df, origins, _ = served(tmp_path)
-    twin = ModelState.load(tmp_path / "state")
+    twin = ModelState.load(tmp_path / "SE3" / "ensemble")
     state.preview(df[df["origin_date"] == origins[9].isoformat()])
     pd.testing.assert_frame_equal(
         state.advance(df, df, origins[10]), twin.advance(df, df, origins[10])
@@ -75,4 +75,4 @@ def test_non_deployable_model_is_refused(cfg: BaseConfig, tmp_path: Path) -> Non
     state, *_ = served(tmp_path)
     state.model.run_tags = lambda: {"deployable": "false", "model_licence": "nc"}  # type: ignore[attr-defined]
     with pytest.raises(PermissionError, match="not deployable"):
-        register_state(cfg, state, tmp_path / "state")
+        register_state(cfg, state, tmp_path / "SE3" / "ensemble")

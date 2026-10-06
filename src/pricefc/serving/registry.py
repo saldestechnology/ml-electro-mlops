@@ -117,7 +117,9 @@ def pull_state(zone: str, version: str, dest: Path) -> ModelState:
                 artifact_uri=f"models:/{model_name(zone)}/{version}", dst_path=tmp
             )
         )
-        src = local / "artifacts" / STATE_ARTIFACT
+        # The artifact keeps the source directory's name; MLmodel records where it is.
+        flavor = mlflow.models.Model.load(local).flavors["python_function"]
+        src = local / flavor["artifacts"][STATE_ARTIFACT]["path"]
         state = ModelState.load(src)
         if state.zone != zone:
             raise ValueError(f"version {version} holds zone {state.zone}, not {zone}")
