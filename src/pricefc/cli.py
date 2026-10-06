@@ -548,6 +548,19 @@ def serve() -> None:
 
 
 @app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", help="HTTP bind address."),
+    port: int = typer.Option(8000, help="HTTP bind port."),
+) -> None:
+    """Serve the read-only dashboard API (needs the `web` extra)."""
+    import uvicorn
+
+    from pricefc.web.app import create_app
+
+    uvicorn.run(create_app(load_config(Path("configs/base.yaml"))), host=host, port=port)
+
+
+@app.command()
 def snapshots(config: Path = CONFIG_OPT) -> None:
     """List raw snapshots with row counts and validation status."""
     import json

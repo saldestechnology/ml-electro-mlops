@@ -2065,6 +2065,10 @@ timesfm-xreg = [
     { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
 ]
+web = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2080,6 +2084,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "entsoe-py", specifier = ">=0.8.1" },
+    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115" },
     { name = "holidays", specifier = ">=0.105" },
     { name = "jax", marker = "extra == 'timesfm-xreg'", specifier = ">=0.7" },
     { name = "lightgbm", specifier = ">=4.7.0" },
@@ -2105,8 +2110,9 @@ requires-dist = [
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'timesfm'", specifier = ">=2.4", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'timesfm'", specifier = ">=2.4" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.30" },
 ]
-provides-extras = ["local-mac", "gpu-cuda", "timesfm", "timesfm-xreg", "serve"]
+provides-extras = ["local-mac", "gpu-cuda", "timesfm", "timesfm-xreg", "serve", "web"]
 
 [package.metadata.requires-dev]
 dev = [
