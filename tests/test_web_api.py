@@ -261,3 +261,21 @@ def test_spa_mount_fallback_and_api_only_mode(
     assert static.get("/api/health").json()["status"] == "ok"
     assert static.get("/api/zones/NO1/model").status_code == 404
     assert static.get("/api/no-route").status_code == 404
+
+
+def test_skill_compares_model_and_naive_on_the_same_hours() -> None:
+    from pricefc.web.data import _score
+
+    qs = [0.05, 0.25, 0.5, 0.75, 0.95]
+    frame = pd.DataFrame(
+        {
+            "actual": [10.0, 10.0],
+            "naive_7d": [12.0, None],  # second hour has no naive value
+            **{f"q{round(q * 100):02d}": [10.0, 110.0] for q in qs},
+        }
+    )
+    got = _score(frame, qs)
+    assert got is not None
+    # On the one paired hour the model is perfect, so skill is 1 despite the bad unpaired hour.
+    assert got["skill"] == 1.0
+    assert got["pinball"] > 0

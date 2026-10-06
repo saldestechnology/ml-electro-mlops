@@ -269,13 +269,14 @@ def _pinball_mean(
 
 
 def _score(frame: pd.DataFrame, quantiles: list[float]) -> dict[str, float | None] | None:
-    """Score actual hours; naive loss uses only hours with both actual and naive values."""
+    """Score actual hours. The naive loss, and the skill, use only hours that have both an
+    actual and a naive value, so model and naive are compared on the same hours."""
     quantile_cols = [qcol(tau) for tau in quantiles]
     actual = frame["actual"].notna()
     forecast_mask = actual & frame[quantile_cols].notna().all(axis=1)
     if not forecast_mask.any():
         return None
-    naive_mask = actual & frame["naive_7d"].notna()
+    naive_mask = forecast_mask & frame["naive_7d"].notna()
     y = frame.loc[forecast_mask, "actual"].to_numpy(dtype="float64")
     q50 = frame.loc[forecast_mask, qcol(0.5)].to_numpy(dtype="float64")
     coverage_50 = np.mean(
@@ -288,9 +289,10 @@ def _score(frame: pd.DataFrame, quantiles: list[float]) -> dict[str, float | Non
     )
     live_pinball = _pinball_mean(frame, quantiles, forecast_mask)
     naive_pinball = _pinball_mean(frame, quantiles, naive_mask, "naive_7d")
+    paired_pinball = _pinball_mean(frame, quantiles, naive_mask)
     skill = (
-        1.0 - live_pinball / naive_pinball
-        if live_pinball is not None and naive_pinball not in (None, 0.0)
+        1.0 - paired_pinball / naive_pinball
+        if paired_pinball is not None and naive_pinball not in (None, 0.0)
         else None
     )
     return {
