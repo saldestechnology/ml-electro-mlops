@@ -168,3 +168,26 @@ log, KV, AppRoles, policies, operator token, revokes the root token).
 The VPS is shared with other workloads. Do not reboot, run a full upgrade, or change SSH or
 firewall settings without the owner. Disk is limited (~15 GB free): images share their
 dependency layer, and `deploy` prunes dangling images after a healthy deploy.
+
+## Backups (pulled to the owner's laptop)
+
+`tools/backup_vps.sh [env ...]` pulls `~/pricefc/` of an environment (raw snapshots, datasets,
+live rows, forecasts, served states and their backups, MLflow database and artifacts, Prefect
+database) into `~/Backups/pricefc/<env>/<UTC timestamp>/`. The laptop connects to the VPS, never
+the reverse. Snapshots are hard-linked against the previous one (unchanged files cost nothing);
+SQLite databases are copied with SQLite's online backup API inside their containers and must
+pass `pragma integrity_check`. Kept: newest 14 plus one per ISO week for 8 weeks. Not included:
+`hf-cache` (re-downloadable) and Vault (raft snapshots need the owner's operator token).
+
+Scheduled daily at 03:30 by launchd (`tools/launchd/com.pricefc.backup.plist`; a missed slot runs
+on wake; log `~/Backups/pricefc/backup.log`). macOS denies launchd jobs access to `~/Documents`,
+so the job runs an installed copy: after changing the script, re-run
+`install -m 755 tools/backup_vps.sh ~/.local/libexec/pricefc-backup.sh`.
+
+Restore (one environment, after stopping its pod: `systemctl --user stop pricefc-pod.service`
+as the environment user):
+
+```bash
+rsync -a ~/Backups/pricefc/staging/latest/ pricefc-vps-staging:pricefc/
+ssh pricefc-vps-staging 'rm -f pricefc/mlflow/mlflow.db-wal pricefc/prefect/prefect.db-wal pricefc/prefect/prefect.db-shm && systemctl --user start pricefc-pod.service'
+```
