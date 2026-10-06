@@ -31,6 +31,15 @@ describe('fixtures', () => {
     const se1 = await client.performance('SE1', 30);
     expect(se1.live).not.toBeNull();
     expect(se1.daily.length).toBeGreaterThan(20);
+    // SE3: a single scored day (below the minimum sample); SE2: a gap of three missed days
+    const se3 = await client.performance('SE3', 30);
+    expect(se3.daily.map((d) => d.origin_date)).toEqual(['2026-10-22']);
+    expect(se3.n_origins_scored).toBe(1);
+    const se2 = (await client.performance('SE2', 30)).daily.map((d) => d.origin_date);
+    expect(se2).toContain('2026-10-14');
+    expect(se2).not.toContain('2026-10-15');
+    expect(se2).not.toContain('2026-10-17');
+    expect(se2).toContain('2026-10-18');
   });
 
   it('include a 25-hour DST day with correct local hours', async () => {

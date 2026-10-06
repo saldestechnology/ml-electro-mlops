@@ -3,12 +3,19 @@ import { scaleLinear } from 'd3-scale';
 import type { Performance } from '../../api';
 import { useElementWidth } from '../../hooks/useElementWidth';
 import { fmtNum } from '../../lib/format';
+import { daysScored } from '../../lib/sample';
 import { addDays, formatDateTiny } from '../../lib/time';
-import { dayIndex } from './daily';
-import type { DailyDomains } from './daily';
+import { consecutiveRuns, dailyPoints } from './daily';
+import type { DailyDomains, DailyPoint } from './daily';
 
 const M = { top: 8, right: 8, bottom: 24, left: 32 };
 
+/**
+ * Daily pinball loss of the model and the naive forecast for one zone. Every scored day is a
+ * marker (filled red for the model, open grey for naive); lines join consecutive days only, so
+ * a single scored day still shows and a missing day leaves a gap. Callers render the empty
+ * state when `dailyPoints` is empty.
+ */
 export function DailyPinballChart({
   perf,
   domains,
@@ -22,18 +29,18 @@ export function DailyPinballChart({
   const iw = Math.max(10, width - M.left - M.right);
   const ih = height - M.top - M.bottom;
   const x = scaleLinear()
-    .domain([0, domains.days - 1])
+    .domain([0, Math.max(1, domains.days - 1)])
     .range([0, iw]);
   const y = scaleLinear().domain([0, domains.max]).range([ih, 0]);
-  const pts = perf.daily.map((d) => ({ i: dayIndex(domains.start, d.origin_date), d }));
-  const path = (key: 'pinball' | 'naive_7d_pinball') =>
-    line<(typeof pts)[number]>()
-      .defined((p) => p.i >= 0)
+  const pts = dailyPoints(perf, domains);
+  const runs = consecutiveRuns(pts).filter((r) => r.length > 1);
+  const path = (run: DailyPoint[], key: 'pinball' | 'naive') =>
+    line<DailyPoint>()
       .x((p) => x(p.i))
-      .y((p) => y(p.d[key]))(pts) ?? '';
-  const last = perf.daily[perf.daily.length - 1];
-  const label = `${perf.zone} daily pinball loss over ${perf.daily.length} scored days; latest ${
-    last ? `${fmtNum(last.pinball, 2)} against naive ${fmtNum(last.naive_7d_pinball, 2)}` : 'none'
+      .y((p) => y(p[key]))(run) ?? '';
+  const last = pts[pts.length - 1];
+  const label = `${perf.zone} daily pinball loss, ${daysScored(pts.length)}; latest ${
+    last ? `${fmtNum(last.pinball, 2)} against naive ${fmtNum(last.naive, 2)}` : 'none'
   }.`;
 
   return (
@@ -48,9 +55,25 @@ export function DailyPinballChart({
               </text>
             </g>
           ))}
-          <path d={path('naive_7d_pinball')} className="fan__naive" />
-          <path d={path('pinball')} className="fan__median" />
-          {[0, domains.days - 1].map((i) => (
+          {runs.map((r) => (
+            <path key={`n${r[0]?.i}`} d={path(r, 'naive')} className="fan__naive" />
+          ))}
+          {runs.map((r) => (
+            <path key={`m${r[0]?.i}`} d={path(r, 'pinball')} className="fan__median" />
+          ))}
+          {pts.map((p) => (
+            <circle key={`n${p.i}`} cx={x(p.i)} cy={y(p.naive)} r={3} className="daily__naive" />
+          ))}
+          {pts.map((p) => (
+            <circle
+              key={`m${p.i}`}
+              cx={x(p.i)}
+              cy={y(p.pinball)}
+              r={3.5}
+              className="daily__model"
+            />
+          ))}
+          {[...new Set([0, domains.days - 1])].map((i) => (
             <text
               key={i}
               x={x(i)}

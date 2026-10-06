@@ -82,11 +82,49 @@
   line-height: var(--lh-sm) !important;
   font-weight: 400 !important;
 }
+/* a live figure from fewer than MIN_DAYS scored days: normal size, muted, never red */
+.matrix__thin {
+  color: var(--c-fg-3);
+}
+.matrix__big td.matrix__thin {
+  font-size: var(--t-base);
+  line-height: var(--lh-base);
+  font-weight: 400;
+  letter-spacing: 0;
+  padding-top: var(--s1);
+  padding-bottom: var(--s1);
+}
+.matrix__caveat {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--c-fg-3);
+}
 .matrix__ref th,
 .matrix__ref td {
   color: var(--c-fg-2);
 }
-tr:not(.matrix__ref) + .matrix__ref th,
+tr:not(.matrix__ref) + /* a live figure from fewer than MIN_DAYS scored days: normal size, muted, never red */
+.matrix__thin {
+  color: var(--c-fg-3);
+}
+.matrix__big td.matrix__thin {
+  font-size: var(--t-base);
+  line-height: var(--lh-base);
+  font-weight: 400;
+  letter-spacing: 0;
+  padding-top: var(--s1);
+  padding-bottom: var(--s1);
+}
+.matrix__caveat {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--c-fg-3);
+}
+.matrix__ref th,
 tr:not(.matrix__ref) + .matrix__ref td {
   border-top: var(--rule) solid var(--c-rule-strong);
 }
@@ -114,6 +152,12 @@ tr:not(.matrix__ref) + .matrix__ref td {
   width: 2px;
   margin-left: -1px;
   background: var(--c-signal);
+}
+.coverage--muted .coverage__fill {
+  background: var(--c-band-50);
+}
+.coverage--muted .coverage__nominal {
+  background: var(--c-fg-3);
 }
 .coverage__diff {
   grid-column: 2;
@@ -151,6 +195,14 @@ tr:not(.matrix__ref) + .matrix__ref td {
 .daily__svg {
   display: block;
   overflow: visible;
+}
+.daily__model {
+  fill: var(--c-signal);
+}
+.daily__naive {
+  fill: var(--c-bg);
+  stroke: var(--c-naive);
+  stroke-width: 1.5;
 }
 
 @media (max-width: 1024px) {

@@ -1,12 +1,13 @@
 import { ZONES } from '../api';
 import type { Performance, Zone } from '../api';
 import { DailyPinballChart } from '../components/chart/DailyPinballChart';
-import { dailyDomains } from '../components/chart/daily';
+import { dailyDomains, dailyPoints } from '../components/chart/daily';
 import { Coverage } from '../components/Coverage';
 import { EmptyState, ErrorState, Loading } from '../components/States';
 import { useApi } from '../hooks/useApi';
 import type { Loadable } from '../hooks/useApi';
 import { fmtNum, fmtPct } from '../lib/format';
+import { MIN_DAYS, tooEarlyNote, tooFewDays } from '../lib/sample';
 import './PerformancePage.css';
 
 const DAYS = 30;
@@ -36,7 +37,8 @@ export function PerformancePage() {
           Live scores of the served model over the last {DAYS} days, against the seasonal naive
           forecast (same hour one week earlier). Pinball loss averages the quantile loss over all
           hours and the seven quantiles, in EUR/MWh; lower is better. Skill is 1 − pinball ÷ naive
-          pinball.
+          pinball. Skill and coverage need at least {MIN_DAYS} scored days to mean much; until a
+          zone has that many they are shown muted, with the number of days scored.
         </p>
       </header>
       {all.status === 'loading' && <Loading what="scores" />}
@@ -76,22 +78,42 @@ function PerformanceView({ zones }: { zones: PerZone[] }) {
               </tr>
             </thead>
             <tbody>
-              <Row label="Skill vs naive 7d" note="live, higher is better" zones={zones} big>
+              <Row
+                label="Skill vs naive 7d"
+                note="live, higher is better"
+                zones={zones}
+                big
+                live="caveat"
+              >
                 {(p) => (p.live ? fmtPct(p.live.skill) : null)}
               </Row>
-              <Row label="Pinball, live" note="EUR/MWh" zones={zones}>
+              <Row label="Pinball, live" note="EUR/MWh" zones={zones} live="muted">
                 {(p) => (p.live ? fmtNum(p.live.pinball, 2) : null)}
               </Row>
-              <Row label="Pinball, naive 7d" note="EUR/MWh, same days" zones={zones}>
+              <Row label="Pinball, naive 7d" note="EUR/MWh, same days" zones={zones} live="muted">
                 {(p) => (p.live ? fmtNum(p.live.naive_7d_pinball, 2) : null)}
               </Row>
-              <Row label="Coverage, 50% band" note="share of actuals in q25–q75" zones={zones}>
-                {(p) => (p.live ? <Coverage value={p.live.coverage_50} nominal={0.5} /> : null)}
+              <Row
+                label="Coverage, 50% band"
+                note="share of actuals in q25–q75"
+                zones={zones}
+                live="caveat"
+              >
+                {(p, thin) =>
+                  p.live ? <Coverage value={p.live.coverage_50} nominal={0.5} muted={thin} /> : null
+                }
               </Row>
-              <Row label="Coverage, 90% band" note="share of actuals in q05–q95" zones={zones}>
-                {(p) => (p.live ? <Coverage value={p.live.coverage_90} nominal={0.9} /> : null)}
+              <Row
+                label="Coverage, 90% band"
+                note="share of actuals in q05–q95"
+                zones={zones}
+                live="caveat"
+              >
+                {(p, thin) =>
+                  p.live ? <Coverage value={p.live.coverage_90} nominal={0.9} muted={thin} /> : null
+                }
               </Row>
-              <Row label="MAE of the median" note="EUR/MWh" zones={zones}>
+              <Row label="MAE of the median" note="EUR/MWh" zones={zones} live="muted">
                 {(p) => (p.live ? fmtNum(p.live.mae_median, 2) : null)}
               </Row>
               <Row label="Days scored" note={`of the last ${DAYS}`} zones={zones}>
@@ -124,7 +146,8 @@ function PerformanceView({ zones }: { zones: PerZone[] }) {
           Daily pinball loss
         </h2>
         <p className="perf__note">
-          Model (red) and naive 7-day (dashed) per forecast day; same scales in every panel.
+          Model (red dots) and naive 7-day (open grey circles) per forecast day; lines join
+          consecutive days only, so a gap means a day without scores. Same scales in every panel.
         </p>
         {zones.map((z) => (
           <div key={z.zone} className="perf__panel">
@@ -133,7 +156,7 @@ function PerformanceView({ zones }: { zones: PerZone[] }) {
               <ErrorState error={z.result.error} what={`scores for ${z.zone}`} />
             )}
             {z.result.status === 'ok' &&
-              (z.result.data.daily.length ? (
+              (dailyPoints(z.result.data, domains).length ? (
                 <DailyPinballChart perf={z.result.data} domains={domains} />
               ) : (
                 <div className="perf__empty">
@@ -157,13 +180,17 @@ function Row({
   children,
   big = false,
   reference = false,
+  live,
 }: {
   label: string;
   note: string;
   zones: PerZone[];
-  children: (p: Performance) => React.ReactNode;
+  /** Cell content; `thin` is true when the zone has fewer than MIN_DAYS scored days. */
+  children: (p: Performance, thin: boolean) => React.ReactNode;
   big?: boolean;
   reference?: boolean;
+  /** A live figure: below MIN_DAYS scored days it is muted, and with "caveat" also annotated. */
+  live?: 'muted' | 'caveat';
 }) {
   return (
     <tr className={`${big ? 'matrix__big' : ''} ${reference ? 'matrix__ref' : ''}`}>
@@ -179,10 +206,20 @@ function Row({
             </td>
           );
         }
-        const v = children(z.result.data);
+        const n = z.result.data.n_origins_scored;
+        const thin = live !== undefined && tooFewDays(n);
+        const v = children(z.result.data, thin);
+        if (v === null) {
+          return (
+            <td key={z.zone} className="matrix__na">
+              not scored yet
+            </td>
+          );
+        }
         return (
-          <td key={z.zone} className={v === null ? 'matrix__na' : undefined}>
-            {v ?? 'not scored yet'}
+          <td key={z.zone} className={thin ? 'matrix__thin' : undefined}>
+            {v}
+            {thin && live === 'caveat' && <span className="matrix__caveat">{tooEarlyNote(n)}</span>}
           </td>
         );
       })}
