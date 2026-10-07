@@ -354,13 +354,15 @@ def _install_metrics_http(
             return _MetricsResponse(
                 [{"name": name, "id": flow_id} for name, flow_id in flow_ids.items()]
             )
-        if json.get("flow_runs"):
+        if json.get("sort") == "NEXT_SCHEDULED_START_TIME_ASC":
             scheduled = [
                 {"flow_id": "flow-ingest"},
                 {"flow_id": "flow-forecast"},
                 {"flow_id": "flow-forecast"},
             ]
             return _MetricsResponse(scheduled if with_runs else [])
+        # History must never include future runs: they have no start time and would look newest.
+        assert json["flow_runs"]["state"]["type"] == {"not_any_": ["SCHEDULED"]}
         runs = [
             {
                 "flow_id": "flow-ingest",

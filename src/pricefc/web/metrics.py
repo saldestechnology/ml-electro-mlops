@@ -561,6 +561,8 @@ class MetricsCollector:
                         "flow_runs/filter",
                         {
                             "flows": {"id": {"any_": ids}},
+                            # Future runs have no start time yet and would look like the latest.
+                            "flow_runs": {"state": {"type": {"not_any_": ["SCHEDULED"]}}},
                             "sort": "START_TIME_DESC",
                             "limit": 100,
                         },
