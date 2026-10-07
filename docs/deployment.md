@@ -21,6 +21,7 @@ publish release vX.Y.Z ──► production: same image digest, after approval (
   | Prefect UI (loopback) | 127.0.0.1:4200 | 127.0.0.1:4300 |
   | ingest schedule (Stockholm) | 08:15, 13:35 | 08:00, 13:20 |
   | forecast schedule (Stockholm) | 09:05 | 09:05 |
+  | score schedule (Stockholm) | 14:00, 17:00 | 14:00, 17:00 |
   | data | `~pricefc/pricefc/` | `~pricefc-staging/pricefc/` |
 
 - **Deploy**: GitHub Actions SSHes in with an environment-specific key that is bound to
@@ -61,7 +62,9 @@ Freshness and service gauges: pricefc_raw_latest_valid_pulled_at_timestamp_secon
 pricefc_raw_latest_pull_valid, pricefc_prefect_up,
 pricefc_flow_last_success_timestamp_seconds, pricefc_flow_last_run_timestamp_seconds,
 pricefc_flow_last_run_state, pricefc_flow_last_success_duration_seconds,
-pricefc_flow_runs_scheduled, and pricefc_mlflow_up. Prefect configuration uses
+pricefc_flow_runs_scheduled, pricefc_score_last_origin_timestamp_seconds, and
+pricefc_mlflow_up. The score timestamp is local midnight of the newest scored origin, labelled
+by zone and role. Prefect configuration uses
 PRICEFC_PREFECT_API_URL (default http://localhost:4200/api) and MLflow uses PRICEFC_MLFLOW_URL
 (default http://localhost:5000). The scheduled-run gauge counts the next 48 hours; zero is a
 useful alert because it can indicate a broken Prefect scheduler.
@@ -193,6 +196,15 @@ pricefc forecast -z SE3 --day 2026-10-06
 Moving the `champion` alias to another registered version is picked up by the next run (pulled,
 then caught up from that version's last origin); to go back to the previous champion, move the
 alias back.
+
+## Afternoon scoring (`score-daily`)
+
+The `score-daily` deployment runs at 14:00 and 17:00 Europe/Stockholm by default
+(`PRICEFC_CRON_SCORE`). It attempts a price ingest, then scores recent forecasts only when every
+delivery hour has an actual and all quantiles are present. Results are upserted to
+`scores/<zone>/<role>.parquet` and logged individually to the MLflow `forecast-score` experiment.
+The later run catches delayed price publication; normally it finds no new origins. For a manual
+run, use `pricefc score --zone SE3` (add `--force` to rewrite existing origins).
 
 ## Secrets (HashiCorp Vault)
 

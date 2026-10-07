@@ -544,3 +544,19 @@
 - Detailed per-slice means, CIs, DM results, and all 12 full-run IDs: [report table](report/regime_ensemble_2026-10-06.md), [CSV](report/regime_ensemble_2026-10-06.csv), [run IDs](report/regime_ensemble_run_ids.json). The report is reproduced by `tools/analyze_regime_backtest.py`.
 
 - **Code**: kept on branch `exp-regime-weights` (commit 6a6ffd1), not merged: it adds unused weighting schemes to the class whose pickled states are served. The TimesFM 3.0 challenger (weather-aware member, -7% to -15% pinball in every zone) addressed the same failure where reweighting could not.
+
+## 2026-10-07 — Afternoon scoring
+
+- **Why**: day-ahead prices for D+1 are usually published around 13:00 on D, so a forecast made
+  at 09:00 can be scored on D's afternoon instead of waiting for the next morning's dataset build.
+  Each origin gets a durable live hold-out score for the champion/challenger decision.
+- **Actuals**: read valid raw price snapshots through `load_hourly_prices`, the same dataset loader
+  that produces the target `y` (including quarter-hour-to-hour aggregation).
+- **Store**: one upserted row per origin at `scores/<zone>/<role>.parquet`; champion and challenger
+  records are kept separately. Each newly written row also gets an MLflow run in
+  `forecast-score`.
+- **Schedule**: `score-daily` runs at 14:00 and 17:00 Europe/Stockholm by default
+  (`PRICEFC_CRON_SCORE`). The second run catches late publication and is normally an idempotent
+  no-op.
+- **Alert**: `ScoreMissing` warns when the newest champion origin in the score store is more than
+  43 hours old, allowing for the next afternoon's scheduled run and DST changes.

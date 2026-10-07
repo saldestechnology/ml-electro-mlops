@@ -118,6 +118,45 @@ def ingest_daily() -> dict[str, Any]:
 
 
 @task(retries=1, retry_delay_seconds=300)
+def score_forecasts_task() -> list[dict[str, Any]]:
+    """Score complete published forecasts and return a compact flow result."""
+    from pricefc.serving.score import score_forecasts
+
+    scores = score_forecasts(_base())
+    return [
+        {
+            "zone": item.zone,
+            "role": item.role,
+            "origin_date": item.origin_date.isoformat(),
+            "pinball": item.pinball,
+            "coverage_90": item.coverage_90,
+            "mae_median": item.mae_median,
+        }
+        for item in scores
+    ]
+
+
+@flow(name="score-daily", log_prints=True, on_failure=[_alert], on_crashed=[_alert])
+def score_daily() -> dict[str, Any]:
+    """Refresh prices best effort, then score any fully published recent forecasts."""
+    try:
+        ingest: dict[str, Any] = ingest_prices_task()
+    except Exception as exc:
+        ingest = {"error": _short(exc)}
+    if ingest.get("failed", 0):
+        ingest["warning"] = f"{ingest['failed']} invalid price snapshot(s)"
+
+    scores = score_forecasts_task()
+    out = {"ingest": ingest, "scored": len(scores), "scores": scores}
+    print(
+        f"score-daily: {len(scores)} new scores; "
+        f"price ingest {ingest.get('snapshots', 'failed')}, "
+        f"invalid {ingest.get('failed', 'n/a')}"
+    )
+    return out
+
+
+@task(retries=1, retry_delay_seconds=300)
 def build_datasets_task(zone: str) -> dict[str, str]:
     """Rebuild the training (stitched) and evaluation (true_lead) datasets from the latest
     snapshots; identical content on the same day reuses the stored version."""
@@ -315,6 +354,7 @@ def deployments(env: str) -> list[Any]:
     afternoon = os.environ.get("PRICEFC_CRON_AFTERNOON", "30 13 * * *")
     # After the 09:00 origin, so the live inputs are exactly what the origin allows.
     forecast = os.environ.get("PRICEFC_CRON_FORECAST", "5 9 * * *")
+    scoring = os.environ.get("PRICEFC_CRON_SCORE", "0 14,17 * * *")
     return [
         *(
             ingest_daily.to_deployment(
@@ -324,6 +364,9 @@ def deployments(env: str) -> list[Any]:
         ),
         forecast_daily.to_deployment(
             name=f"{env}-forecast", schedule=Cron(forecast, timezone=tz), tags=[env]
+        ),
+        score_daily.to_deployment(
+            name=f"{env}-score", schedule=Cron(scoring, timezone=tz), tags=[env]
         ),
     ]
 
