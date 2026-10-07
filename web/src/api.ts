@@ -1,6 +1,9 @@
 // Typed client for the pricefc read-only HTTP API (see the web contract).
-// Every response is checked at runtime against the contract shape, so a drift between the
-// API and the frontend fails loudly in one place instead of rendering garbage.
+// Every response is checked at runtime against zod schemas of the contract shape, so a drift
+// between the API and the frontend fails loudly in one place instead of rendering garbage.
+// The exported types are inferred from the schemas: one source of truth.
+
+import { z } from 'zod';
 
 export const ZONES = ['SE1', 'SE2', 'SE3', 'SE4'] as const;
 export type Zone = (typeof ZONES)[number];
@@ -8,86 +11,121 @@ export type Zone = (typeof ZONES)[number];
 export const QUANTILE_KEYS = ['q05', 'q10', 'q25', 'q50', 'q75', 'q90', 'q95'] as const;
 export type QuantileKey = (typeof QUANTILE_KEYS)[number];
 
-export interface Health {
-  status: string;
-  env: string;
-  git_sha: string;
-}
+// ---------------------------------------------------------------------------------------
+// Schemas (the contract). Unknown keys are stripped; nullable fields also accept a missing key.
 
-export interface ZoneSummary {
-  zone: Zone;
-  latest_origin: string | null;
-  target_date: string | null;
-  model_version: string | null;
-  forecast_made_at: string | null;
-  last_fit: string | null;
-  stale: boolean;
-}
+const zoneSchema = z.enum(ZONES, { error: 'SE1..SE4' });
+const str = z.string();
+const num = z.number(); // finite numbers only (zod rejects NaN and +-Infinity)
+const strOrNull = z
+  .string()
+  .nullish()
+  .transform((v) => v ?? null);
+const numOrNull = z
+  .number()
+  .nullish()
+  .transform((v) => v ?? null);
 
-export interface Origins {
-  zone: Zone;
-  origins: string[];
-}
+/** String map that tolerates numbers (stringified) and drops null/missing entries. */
+const strMap = z
+  .record(z.string(), z.union([z.string(), z.number().transform(String), z.null(), z.undefined()]))
+  .transform((m) => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(m)) if (v !== null && v !== undefined) out[k] = v;
+    return out;
+  });
 
-export type ForecastHour = Record<QuantileKey, number> & {
-  target_time: string;
-  hour_local: number;
-  actual: number | null;
-  naive_7d: number | null;
-};
+export const healthSchema = z.object({ status: str, env: str, git_sha: str });
+export type Health = z.infer<typeof healthSchema>;
 
-export interface Forecast {
-  zone: Zone;
-  origin_date: string;
-  origin: string;
-  target_date: string;
-  model: string;
-  model_version: string;
-  forecast_made_at: string;
-  quantiles: number[];
-  hours: ForecastHour[];
-}
+export const zoneSummarySchema = z.object({
+  zone: zoneSchema,
+  latest_origin: strOrNull,
+  target_date: strOrNull,
+  model_version: strOrNull,
+  forecast_made_at: strOrNull,
+  last_fit: strOrNull,
+  stale: z.boolean(),
+});
+export type ZoneSummary = z.infer<typeof zoneSummarySchema>;
 
-export interface LivePerformance {
-  pinball: number;
-  naive_7d_pinball: number;
-  skill: number;
-  coverage_50: number;
-  coverage_90: number;
-  mae_median: number;
-}
+export const originsSchema = z.object({ zone: zoneSchema, origins: z.array(str) });
+export type Origins = z.infer<typeof originsSchema>;
 
-export interface DailyPerformance {
-  origin_date: string;
-  pinball: number;
-  naive_7d_pinball: number;
-  coverage_90: number;
-}
+const forecastHourSchema = z.object({
+  target_time: str,
+  hour_local: num.refine((n) => Number.isInteger(n) && n >= 0 && n <= 23, {
+    error: 'integer 0..23',
+  }),
+  q05: num,
+  q10: num,
+  q25: num,
+  q50: num,
+  q75: num,
+  q90: num,
+  q95: num,
+  actual: numOrNull,
+  naive_7d: numOrNull,
+});
+export type ForecastHour = z.infer<typeof forecastHourSchema>;
 
-export interface Performance {
-  zone: Zone;
-  days: number;
-  n_origins_scored: number;
-  live: LivePerformance | null;
-  daily: DailyPerformance[];
-  backtest: { pinball: number; naive_7d_pinball: number };
-}
+export const forecastSchema = z.object({
+  zone: zoneSchema,
+  origin_date: str,
+  origin: str,
+  target_date: str,
+  model: str,
+  model_version: str,
+  forecast_made_at: str,
+  quantiles: z.array(num),
+  hours: z.array(forecastHourSchema),
+});
+export type Forecast = z.infer<typeof forecastSchema>;
 
-export interface ModelCard {
-  zone: Zone;
-  spec: string;
-  model_version: string | null;
-  first_origin: string | null;
-  last_origin: string | null;
-  last_fit: string | null;
-  origins_served: number;
-  train_start: string | null;
-  datasets: Record<string, string>;
-  versions: Record<string, string>;
-  git_sha: string;
-  saved_at: string | null;
-  backups: string[];
-}
+const livePerformanceSchema = z.object({
+  pinball: num,
+  naive_7d_pinball: num,
+  skill: num,
+  coverage_50: num,
+  coverage_90: num,
+  mae_median: num,
+});
+export type LivePerformance = z.infer<typeof livePerformanceSchema>;
+
+const dailyPerformanceSchema = z.object({
+  origin_date: str,
+  pinball: num,
+  naive_7d_pinball: num,
+  coverage_90: num,
+});
+export type DailyPerformance = z.infer<typeof dailyPerformanceSchema>;
+
+export const performanceSchema = z.object({
+  zone: zoneSchema,
+  days: num,
+  n_origins_scored: num,
+  live: livePerformanceSchema.nullish().transform((v) => v ?? null),
+  daily: z.array(dailyPerformanceSchema),
+  backtest: z.object({ pinball: num, naive_7d_pinball: num }),
+});
+export type Performance = z.infer<typeof performanceSchema>;
+
+export const modelCardSchema = z.object({
+  zone: zoneSchema,
+  spec: str,
+  model_version: strOrNull,
+  first_origin: strOrNull,
+  last_origin: strOrNull,
+  last_fit: strOrNull,
+  origins_served: num,
+  train_start: strOrNull,
+  datasets: strMap,
+  versions: strMap,
+  git_sha: str,
+  saved_at: strOrNull,
+  backups: z.array(str),
+});
+export type ModelCard = z.infer<typeof modelCardSchema>;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -108,180 +146,41 @@ export class ContractError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------------------
-// Small runtime validators (no schema library: the contract is small and fixed).
+/** `forecast.hours[3].q50` style path from a zod issue path. */
+function formatPath(root: string, path: readonly PropertyKey[]): string {
+  return path.reduce<string>(
+    (acc, k) => (typeof k === 'number' ? `${acc}[${k}]` : `${acc}.${String(k)}`),
+    root,
+  );
+}
 
-type Obj = Record<string, unknown>;
-
-function obj(v: unknown, path: string): Obj {
-  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
-    throw new ContractError(path, 'object', v);
+function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
+  let cur = input;
+  for (const k of path) {
+    if (typeof cur !== 'object' || cur === null) return undefined;
+    cur = (cur as Record<PropertyKey, unknown>)[k];
   }
-  return v as Obj;
-}
-function arr(v: unknown, path: string): unknown[] {
-  if (!Array.isArray(v)) throw new ContractError(path, 'array', v);
-  return v;
-}
-function str(v: unknown, path: string): string {
-  if (typeof v !== 'string') throw new ContractError(path, 'string', v);
-  return v;
-}
-function strOrNull(v: unknown, path: string): string | null {
-  return v === null || v === undefined ? null : str(v, path);
-}
-function num(v: unknown, path: string): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) throw new ContractError(path, 'number', v);
-  return v;
-}
-function numOrNull(v: unknown, path: string): number | null {
-  return v === null || v === undefined ? null : num(v, path);
-}
-function bool(v: unknown, path: string): boolean {
-  if (typeof v !== 'boolean') throw new ContractError(path, 'boolean', v);
-  return v;
-}
-function zone(v: unknown, path: string): Zone {
-  const s = str(v, path);
-  if (!(ZONES as readonly string[]).includes(s)) throw new ContractError(path, 'SE1..SE4', v);
-  return s as Zone;
-}
-function strMap(v: unknown, path: string): Record<string, string> {
-  const o = obj(v, path);
-  const out: Record<string, string> = {};
-  for (const [k, val] of Object.entries(o)) {
-    if (val === null || val === undefined) continue;
-    out[k] = typeof val === 'number' ? String(val) : str(val, `${path}.${k}`);
-  }
-  return out;
+  return cur;
 }
 
-export function parseHealth(v: unknown): Health {
-  const o = obj(v, 'health');
-  return {
-    status: str(o.status, 'health.status'),
-    env: str(o.env, 'health.env'),
-    git_sha: str(o.git_sha, 'health.git_sha'),
-  };
+/** Parse `input` with `schema`, reporting the first failure as a ContractError naming its path. */
+function parseContract<S extends z.ZodType>(schema: S, input: unknown, root: string): z.infer<S> {
+  const r = schema.safeParse(input);
+  if (r.success) return r.data;
+  const issue = r.error.issues[0];
+  if (!issue) throw new ContractError(root, 'valid value', input);
+  const expected = issue.code === 'invalid_type' ? issue.expected : issue.message;
+  throw new ContractError(formatPath(root, issue.path), expected, valueAt(input, issue.path));
 }
 
-export function parseZones(v: unknown): ZoneSummary[] {
-  return arr(v, 'zones').map((item, i) => {
-    const p = `zones[${i}]`;
-    const o = obj(item, p);
-    return {
-      zone: zone(o.zone, `${p}.zone`),
-      latest_origin: strOrNull(o.latest_origin, `${p}.latest_origin`),
-      target_date: strOrNull(o.target_date, `${p}.target_date`),
-      model_version: strOrNull(o.model_version, `${p}.model_version`),
-      forecast_made_at: strOrNull(o.forecast_made_at, `${p}.forecast_made_at`),
-      last_fit: strOrNull(o.last_fit, `${p}.last_fit`),
-      stale: bool(o.stale, `${p}.stale`),
-    };
-  });
-}
-
-export function parseOrigins(v: unknown): Origins {
-  const o = obj(v, 'origins');
-  return {
-    zone: zone(o.zone, 'origins.zone'),
-    origins: arr(o.origins, 'origins.origins').map((d, i) => str(d, `origins.origins[${i}]`)),
-  };
-}
-
-export function parseForecast(v: unknown): Forecast {
-  const o = obj(v, 'forecast');
-  const hours = arr(o.hours, 'forecast.hours').map((item, i): ForecastHour => {
-    const p = `forecast.hours[${i}]`;
-    const h = obj(item, p);
-    const hourLocal = num(h.hour_local, `${p}.hour_local`);
-    if (!Number.isInteger(hourLocal) || hourLocal < 0 || hourLocal > 23) {
-      throw new ContractError(`${p}.hour_local`, 'integer 0..23', hourLocal);
-    }
-    return {
-      target_time: str(h.target_time, `${p}.target_time`),
-      hour_local: hourLocal,
-      q05: num(h.q05, `${p}.q05`),
-      q10: num(h.q10, `${p}.q10`),
-      q25: num(h.q25, `${p}.q25`),
-      q50: num(h.q50, `${p}.q50`),
-      q75: num(h.q75, `${p}.q75`),
-      q90: num(h.q90, `${p}.q90`),
-      q95: num(h.q95, `${p}.q95`),
-      actual: numOrNull(h.actual, `${p}.actual`),
-      naive_7d: numOrNull(h.naive_7d, `${p}.naive_7d`),
-    };
-  });
-  return {
-    zone: zone(o.zone, 'forecast.zone'),
-    origin_date: str(o.origin_date, 'forecast.origin_date'),
-    origin: str(o.origin, 'forecast.origin'),
-    target_date: str(o.target_date, 'forecast.target_date'),
-    model: str(o.model, 'forecast.model'),
-    model_version: str(o.model_version, 'forecast.model_version'),
-    forecast_made_at: str(o.forecast_made_at, 'forecast.forecast_made_at'),
-    quantiles: arr(o.quantiles, 'forecast.quantiles').map((q, i) =>
-      num(q, `forecast.quantiles[${i}]`),
-    ),
-    hours,
-  };
-}
-
-export function parsePerformance(v: unknown): Performance {
-  const o = obj(v, 'performance');
-  let live: LivePerformance | null = null;
-  if (o.live !== null && o.live !== undefined) {
-    const l = obj(o.live, 'performance.live');
-    live = {
-      pinball: num(l.pinball, 'performance.live.pinball'),
-      naive_7d_pinball: num(l.naive_7d_pinball, 'performance.live.naive_7d_pinball'),
-      skill: num(l.skill, 'performance.live.skill'),
-      coverage_50: num(l.coverage_50, 'performance.live.coverage_50'),
-      coverage_90: num(l.coverage_90, 'performance.live.coverage_90'),
-      mae_median: num(l.mae_median, 'performance.live.mae_median'),
-    };
-  }
-  const b = obj(o.backtest, 'performance.backtest');
-  return {
-    zone: zone(o.zone, 'performance.zone'),
-    days: num(o.days, 'performance.days'),
-    n_origins_scored: num(o.n_origins_scored, 'performance.n_origins_scored'),
-    live,
-    daily: arr(o.daily, 'performance.daily').map((item, i) => {
-      const p = `performance.daily[${i}]`;
-      const d = obj(item, p);
-      return {
-        origin_date: str(d.origin_date, `${p}.origin_date`),
-        pinball: num(d.pinball, `${p}.pinball`),
-        naive_7d_pinball: num(d.naive_7d_pinball, `${p}.naive_7d_pinball`),
-        coverage_90: num(d.coverage_90, `${p}.coverage_90`),
-      };
-    }),
-    backtest: {
-      pinball: num(b.pinball, 'performance.backtest.pinball'),
-      naive_7d_pinball: num(b.naive_7d_pinball, 'performance.backtest.naive_7d_pinball'),
-    },
-  };
-}
-
-export function parseModel(v: unknown): ModelCard {
-  const o = obj(v, 'model');
-  return {
-    zone: zone(o.zone, 'model.zone'),
-    spec: str(o.spec, 'model.spec'),
-    model_version: strOrNull(o.model_version, 'model.model_version'),
-    first_origin: strOrNull(o.first_origin, 'model.first_origin'),
-    last_origin: strOrNull(o.last_origin, 'model.last_origin'),
-    last_fit: strOrNull(o.last_fit, 'model.last_fit'),
-    origins_served: num(o.origins_served, 'model.origins_served'),
-    train_start: strOrNull(o.train_start, 'model.train_start'),
-    datasets: strMap(o.datasets, 'model.datasets'),
-    versions: strMap(o.versions, 'model.versions'),
-    git_sha: str(o.git_sha, 'model.git_sha'),
-    saved_at: strOrNull(o.saved_at, 'model.saved_at'),
-    backups: arr(o.backups, 'model.backups').map((d, i) => str(d, `model.backups[${i}]`)),
-  };
-}
+export const parseHealth = (v: unknown): Health => parseContract(healthSchema, v, 'health');
+export const parseZones = (v: unknown): ZoneSummary[] =>
+  parseContract(z.array(zoneSummarySchema), v, 'zones');
+export const parseOrigins = (v: unknown): Origins => parseContract(originsSchema, v, 'origins');
+export const parseForecast = (v: unknown): Forecast => parseContract(forecastSchema, v, 'forecast');
+export const parsePerformance = (v: unknown): Performance =>
+  parseContract(performanceSchema, v, 'performance');
+export const parseModel = (v: unknown): ModelCard => parseContract(modelCardSchema, v, 'model');
 
 // ---------------------------------------------------------------------------------------
 // Client

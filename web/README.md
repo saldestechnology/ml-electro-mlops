@@ -35,6 +35,7 @@ actuals and the newest one without, and the origin before the most recent DST ch
 ```
 src/api.ts                 contract types, runtime parsers, client
 src/fixtures/              deterministic contract-shaped fixtures + fake fetch
+src/store/                 selection store (zustand): zone + chosen origin day; synced with ?zone=&origin=
 src/hooks/                 useApi (tiny fetch hook), status context, element width
 src/lib/                   Stockholm time helpers, number formatting, day summary
 src/components/chart/      fan chart (hand-built SVG, d3-scale/d3-shape), DST slot logic
@@ -43,6 +44,13 @@ src/assets/map/            generated SE1–SE4 map paths (Natural Earth outline,
 src/pages/                 Forecast (/), Performance (/performance), Model (/model)
 src/styles/                fonts.css, tokens.css (all colours/type/space), base.css
 ```
+
+The selected day (forecast origin) is app state in `src/store/selection.ts`. The URL
+(`/?zone=SE2&origin=2026-10-20`) stays the shareable source: it is copied into the store on
+every navigation, and the zone switcher and map build their links from the store, so switching
+zone keeps the day. If the new zone has no forecast for that day, its latest is shown with a
+note and the choice stays in the store, so switching back restores it. Choosing the latest
+clears it. Nothing is persisted beyond the URL.
 
 ## Design
 

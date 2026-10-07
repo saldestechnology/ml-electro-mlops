@@ -1,5 +1,5 @@
+import { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { isZone } from '../api';
 import type { Forecast, Zone } from '../api';
 import { FanChart } from '../components/chart/FanChart';
 import { dayLayout } from '../components/chart/scale';
@@ -23,18 +23,26 @@ import {
   pad2,
   stockholmToday,
 } from '../lib/time';
+import { forecastPath, selectionFromParams, useSelection } from '../store/selection';
 import './ForecastPage.css';
-
-export const DEFAULT_ZONE: Zone = 'SE3';
 
 export function ForecastPage() {
   const [params] = useSearchParams();
-  const zp = params.get('zone');
-  const zone: Zone = isZone(zp) ? zp : DEFAULT_ZONE;
-  const origin = params.get('origin');
+  const { zone, origin: chosen } = selectionFromParams(params);
+  const sync = useSelection((s) => s.sync);
+  // URL -> store; user selections go the other way by navigating to a URL built from the store
+  useEffect(() => {
+    sync(zone, chosen);
+  }, [sync, zone, chosen]);
 
   const origins = useApi(`origins:${zone}`, (c, s) => c.origins(zone, s));
   const hasOrigins = origins.status === 'ok' && origins.data.origins.length > 0;
+  // the chosen day may not exist for this zone: show its latest, but keep the choice
+  const unavailable =
+    origins.status === 'ok' && chosen !== null && !origins.data.origins.includes(chosen)
+      ? chosen
+      : null;
+  const origin = unavailable === null ? chosen : null;
   const forecast = useApi(hasOrigins ? `forecast:${zone}:${origin ?? 'latest'}` : null, (c, s) =>
     c.forecast(zone, origin, s),
   );
@@ -70,7 +78,12 @@ export function ForecastPage() {
         </div>
       )}
       {origins.status === 'ok' && forecast.status === 'ok' && (
-        <ForecastView zone={zone} forecast={forecast.data} origins={origins.data.origins} />
+        <ForecastView
+          zone={zone}
+          forecast={forecast.data}
+          origins={origins.data.origins}
+          unavailable={unavailable}
+        />
       )}
     </div>
   );
@@ -80,10 +93,12 @@ function ForecastView({
   zone,
   forecast,
   origins,
+  unavailable,
 }: {
   zone: Zone;
   forecast: Forecast;
   origins: string[];
+  unavailable: string | null;
 }) {
   const layout = dayLayout(forecast.hours);
   const s = summarise(forecast.hours);
@@ -102,7 +117,7 @@ function ForecastView({
         <p className="label">Delivery day</p>
         <p className="forecast__day">{formatDateLong(forecast.target_date)}</p>
         <DstNote layout={layout} />
-        <MetaBlock zone={zone} forecast={forecast} origins={origins} />
+        <MetaBlock zone={zone} forecast={forecast} origins={origins} unavailable={unavailable} />
         <div className="forecast__map">
           <SwedenMap zone={zone} stale={stale} />
         </div>
@@ -240,10 +255,12 @@ function MetaBlock({
   zone,
   forecast,
   origins,
+  unavailable,
 }: {
   zone: Zone;
   forecast: Forecast;
   origins: string[];
+  unavailable: string | null;
 }) {
   const navigate = useNavigate();
   const { zones } = useStatus();
@@ -263,11 +280,21 @@ function MetaBlock({
           </p>
         </div>
       )}
+      {unavailable && (
+        <div className="past" role="status">
+          <p>
+            {formatDateShort(unavailable)} {unavailable.slice(0, 4)} is not available for {zone};
+            showing the latest.
+          </p>
+        </div>
+      )}
       {!isLatest && latest && (
         <div className="past" role="status">
           <p>
             Viewing an earlier origin.{' '}
-            <Link to={`/?zone=${zone}`}>Back to the latest ({formatDateShort(latest)})</Link>
+            <Link to={forecastPath(zone, null)}>
+              Back to the latest ({formatDateShort(latest)})
+            </Link>
           </p>
         </div>
       )}
@@ -282,7 +309,7 @@ function MetaBlock({
             value={forecast.origin_date}
             onChange={(e) => {
               const v = e.target.value;
-              void navigate(v === latest ? `/?zone=${zone}` : `/?zone=${zone}&origin=${v}`);
+              void navigate(forecastPath(zone, v === latest ? null : v));
             }}
           >
             {origins.map((o, i) => (
