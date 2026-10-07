@@ -16,8 +16,17 @@ ENV = os.environ.get("PRICEFC_ENV", "staging")
 OUT = Path.home() / ".local/state/pricefc-metrics/containers.prom"
 
 
-UNITS = {"B": 1, "kB": 1e3, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12,
-         "KiB": 2**10, "MiB": 2**20, "GiB": 2**30}
+UNITS = {
+    "B": 1,
+    "kB": 1e3,
+    "KB": 1e3,
+    "MB": 1e6,
+    "GB": 1e9,
+    "TB": 1e12,
+    "KiB": 2**10,
+    "MiB": 2**20,
+    "GiB": 2**30,
+}
 
 
 def parse_bytes(text: str) -> int | None:
@@ -33,8 +42,13 @@ def parse_bytes(text: str) -> int | None:
 
 
 def podman(*args: str) -> list[dict]:
-    out = subprocess.run(["podman", *args, "--format", "json"], capture_output=True, text=True,
-                         timeout=60, check=True).stdout
+    out = subprocess.run(
+        ["podman", *args, "--format", "json"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    ).stdout
     return json.loads(out or "[]")
 
 
@@ -63,15 +77,20 @@ def main() -> int:
         used = parse_bytes(str(s.get("mem_usage", ""))) if s else None
         if used is not None:
             memory.append(f"pricefc_container_memory_bytes{{{lab}}} {used}")
-    lines += ["# HELP pricefc_container_healthy 1 healthy, 0 unhealthy (containers with a healthcheck).",
-              "# TYPE pricefc_container_healthy gauge", *health,
-              "# HELP pricefc_container_restarts Restart count.",
-              "# TYPE pricefc_container_restarts gauge", *restarts,
-              "# HELP pricefc_container_memory_bytes Current memory use.",
-              "# TYPE pricefc_container_memory_bytes gauge", *memory,
-              "# HELP pricefc_container_metrics_ok 1 if podman could be queried.",
-              "# TYPE pricefc_container_metrics_ok gauge",
-              f'pricefc_container_metrics_ok{{env="{ENV}"}} {ok}']
+    lines += [
+        "# HELP pricefc_container_healthy 1 healthy, 0 unhealthy (containers with a healthcheck).",
+        "# TYPE pricefc_container_healthy gauge",
+        *health,
+        "# HELP pricefc_container_restarts Restart count.",
+        "# TYPE pricefc_container_restarts gauge",
+        *restarts,
+        "# HELP pricefc_container_memory_bytes Current memory use.",
+        "# TYPE pricefc_container_memory_bytes gauge",
+        *memory,
+        "# HELP pricefc_container_metrics_ok 1 if podman could be queried.",
+        "# TYPE pricefc_container_metrics_ok gauge",
+        f'pricefc_container_metrics_ok{{env="{ENV}"}} {ok}',
+    ]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     # Atomic: node_exporter must never read a half-written file.
     with tempfile.NamedTemporaryFile("w", dir=OUT.parent, delete=False, suffix=".tmp") as f:
