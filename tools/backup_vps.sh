@@ -27,6 +27,8 @@ host_for() {
 }
 
 # SQLite online backup inside a container: <container> <db path> <backup path>.
+# The arguments are fixed names from this script, expanded here on purpose.
+# shellcheck disable=SC2029
 sqlite_backup() {
   ssh "$HOST" "podman exec $1 python -c \"import sqlite3; s = sqlite3.connect('$2'); d = sqlite3.connect('$3'); s.backup(d); d.close(); s.close()\""
 }
