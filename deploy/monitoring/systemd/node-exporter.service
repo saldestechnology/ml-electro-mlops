@@ -1,0 +1,11 @@
+[Unit]
+Description=node_exporter (host metrics; textfile collector for pricefc)
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/.local/state/pricefc-metrics
+ExecStart=%h/.local/opt/node_exporter/node_exporter --web.listen-address=127.0.0.1:9100 --collector.textfile.directory=%h/.local/state/pricefc-metrics
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

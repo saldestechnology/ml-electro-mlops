@@ -1,0 +1,72 @@
+# promtool test rules rules_test.yml   (time starts at 0 = 1970-01-01T00:00:00Z)
+rule_files: [rules.yml]
+evaluation_interval: 1m
+tests:
+  # ForecastMissing: newest forecast is for "day 1" 00:00 (t=86400). Fires once it is past
+  # 09:45 on day 1 (+5 min for), not before.
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_forecast_target_date_timestamp_seconds{env="staging",zone="SE3",role="champion"}'
+        values: '86400+0x500'
+    alert_rule_test:
+      - eval_time: 33h40m   # day 1, 09:40
+        alertname: ForecastMissing
+        exp_alerts: []
+      - eval_time: 33h55m   # day 1, 09:55
+        alertname: ForecastMissing
+        exp_alerts:
+          - exp_labels: {severity: critical, env: staging, zone: SE3, role: champion}
+            exp_annotations:
+              summary: "staging SE3: no champion forecast for tomorrow"
+              description: "Newest champion forecast is for today; forecast-daily (09:05) has not delivered."
+  # The forecast for day 2 arrives at day 1 09:20: no alert at 09:55.
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_forecast_target_date_timestamp_seconds{env="staging",zone="SE3",role="champion"}'
+        values: '86400+0x400 172800+0x200'   # switches at day 1 09:20
+    alert_rule_test:
+      - eval_time: 33h55m
+        alertname: ForecastMissing
+        exp_alerts: []
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_flow_runs_scheduled{env="staging",flow="ingest-daily"}'
+        values: '0x20'
+      - series: 'pricefc_flow_runs_scheduled{env="staging",flow="forecast-daily"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: SchedulerNotScheduling
+        exp_alerts:
+          - exp_labels: {severity: critical, env: staging}
+            exp_annotations:
+              summary: "staging: Prefect has no scheduled runs in the next 48 h"
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_backup_last_success_timestamp_seconds{mode="backup"}'
+        values: '0x500'
+    alert_rule_test:
+      - eval_time: 35h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 38h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: {severity: critical, mode: backup}
+            exp_annotations:
+              summary: "no successful backup for 1d 14h 0m 0s"
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_pinball_mean{env="staging",zone="SE4",role="challenger",window="14d"}'
+        values: '9x60'
+      - series: 'pricefc_backtest_pinball{env="staging",zone="SE4"}'
+        values: '6x60'
+      - series: 'pricefc_scored_days{env="staging",zone="SE4",role="challenger",window="14d"}'
+        values: '10x60'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: ModelDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, env: staging, zone: SE4, role: challenger, window: 14d}
+            exp_annotations:
+              summary: "staging SE4 challenger: 14-day pinball 9.00 is >30% above backtest"

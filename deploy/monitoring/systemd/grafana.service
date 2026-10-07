@@ -1,0 +1,12 @@
+[Unit]
+Description=Grafana (pricefc monitoring)
+After=prometheus.service
+
+[Service]
+WorkingDirectory=%h/.local/opt/grafana
+ExecStart=%h/.local/opt/grafana/bin/grafana server --homepath=%h/.local/opt/grafana --config=%h/.config/pricefc-monitoring/grafana.ini
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -221,6 +221,47 @@ The VPS is shared with other workloads. Do not reboot, run a full upgrade, or ch
 firewall settings without the owner. Disk is limited (~15 GB free): images share their
 dependency layer, and `deploy` prunes dangling images after a healthy deploy.
 
+## Monitoring (Prometheus, Alertmanager, Grafana)
+
+Runs on the backup VPS as the unprivileged user `pricefc-backup` (systemd user services, all on
+127.0.0.1), so it watches the main VPS from outside and keeps alerting when the main VPS is down.
+
+```
+main VPS (staging)                                     backup VPS (pricefc-backup)
+ pricefc-web /metrics :8100 ──┐                         Prometheus :9090 (rules.yml) ── Alertmanager :9093 ── Telegram "FC Mon"
+ node_exporter :9100 ─────────┴── SSH tunnel ─────────▶ :18100 / :19100      │
+   + container-metrics timer      (pricefc-tunnel)                           └── Grafana :3000
+                                                         node_exporter :9100 (+ backup timestamps)
+```
+
+- **Look:** `ssh -N -L 3000:127.0.0.1:3000 pricefc-backup`, then http://localhost:3000 (user
+  `admin`; password in `~/.config/pricefc-monitoring/grafana_admin_password` there; read it in
+  your own terminal). Dashboards: *pricefc · Operations* and *pricefc · Forecast quality*
+  (champion vs challenger, the promotion view). Prometheus itself:
+  `ssh -N -L 9090:127.0.0.1:9090 pricefc-backup`.
+- **Tunnel key** on the main VPS (`authorized_keys` of `pricefc-staging`): `restrict,
+  port-forwarding,permitopen="127.0.0.1:8100",permitopen="127.0.0.1:9100",
+  command="/usr/sbin/nologin",from="62.238.60.155"`: it can forward those two ports and nothing
+  else (no shell; MLflow, Prefect and Vault ports are refused).
+- **Main VPS:** node_exporter (127.0.0.1:9100, once per host, under `pricefc-staging`) and
+  `pricefc-container-metrics.timer` (each minute: running/healthy/restarts/memory per
+  `pricefc-*` container via node_exporter's textfile collector).
+- **Alerts** (`deploy/monitoring/rules.yml`, unit-tested with `promtool test rules
+  rules_test.yml`): ForecastMissing (no champion forecast for tomorrow by 09:50, DST-safe),
+  ChallengerForecastMissing, ForecastIncomplete, ModelDrift (14-day pinball >30 % above
+  backtest), SchedulerNotScheduling (no Prefect runs scheduled in 48 h: the 2026-10-07 incident),
+  IngestStale, RawDataStale, RawPullInvalid, PrefectDown, MlflowDown, MetricsSectionFailing,
+  TargetDown (incl. the tunnel), ContainerNotRunning/Unhealthy, DiskFilling, MemoryLow,
+  BackupStale (36 h), BackupCheckStale (8 d), BackupMetricsMissing. Critical alerts repeat every
+  4 h, warnings daily; a down tunnel inhibits the alerts behind it. `Watchdog` always fires and
+  goes nowhere (proves the pipeline evaluates).
+- **Telegram:** Alertmanager reads the bot token from
+  `~/.config/pricefc-monitoring/telegram_bot_token` (mode 600) at send time; chat "FC Mon" only.
+- **Install / change:** edit `deploy/monitoring/`, regenerate dashboards with
+  `python deploy/monitoring/grafana/build_dashboards.py`, copy the directory to the host and run
+  `setup-backup-vps.sh` (backup VPS) or `setup-main-vps.sh` (main VPS, as the env user). Versions
+  are pinned in `versions.env`; `install.sh` checks published SHA-256 sums.
+
 ## Backups
 
 Three layers, each covering what the others cannot:

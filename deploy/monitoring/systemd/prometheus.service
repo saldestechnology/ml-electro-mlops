@@ -1,0 +1,11 @@
+[Unit]
+Description=Prometheus (pricefc monitoring)
+
+[Service]
+ExecStart=%h/.local/opt/prometheus/prometheus --config.file=%h/.config/pricefc-monitoring/prometheus.yml --storage.tsdb.path=%h/monitoring/prometheus --storage.tsdb.retention.time=400d --storage.tsdb.retention.size=4GB --web.listen-address=127.0.0.1:9090
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=SSH tunnel to the main VPS for scraping (staging web /metrics, node_exporter)
+
+[Service]
+# The key on the main VPS may only forward these two ports (authorized_keys permitopen).
+ExecStart=/usr/bin/ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18100:127.0.0.1:8100 -L 127.0.0.1:19100:127.0.0.1:9100 pricefc-tunnel-staging
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

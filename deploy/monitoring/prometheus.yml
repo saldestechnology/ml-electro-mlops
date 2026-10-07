@@ -1,0 +1,31 @@
+# Prometheus on the backup VPS (user pricefc-backup). The main VPS is reached only through the
+# SSH tunnel (pricefc-tunnel.service): 127.0.0.1:18100 = staging web /metrics,
+# 127.0.0.1:19100 = main VPS node_exporter.
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+rule_files:
+  - rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
+
+scrape_configs:
+  - job_name: pricefc
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["127.0.0.1:18100"]
+        labels: {env: staging, host: main-vps}
+  - job_name: node
+    static_configs:
+      - targets: ["127.0.0.1:19100"]
+        labels: {host: main-vps}
+      - targets: ["127.0.0.1:9100"]
+        labels: {host: backup-vps}
+  - job_name: self
+    static_configs:
+      - targets: ["127.0.0.1:9090", "127.0.0.1:9093"]
+        labels: {host: backup-vps}

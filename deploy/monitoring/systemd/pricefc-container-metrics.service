@@ -1,0 +1,8 @@
+[Unit]
+Description=pricefc: container states for node_exporter's textfile collector
+
+[Service]
+Type=oneshot
+Environment=PRICEFC_ENV=staging
+EnvironmentFile=-%h/.config/pricefc/deploy.env
+ExecStart=/usr/bin/python3 %h/.local/lib/pricefc-monitoring/container-metrics.py

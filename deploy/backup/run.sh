@@ -3,6 +3,7 @@
 #
 #   run.sh backup          pull every env in $PRICEFC_BACKUP_ENVS, then restic backup + forget
 #   run.sh check           weekly: restic check (10% of the data) + restore test of MLflow
+#   run.sh metrics         only rewrite the textfile metrics from the last-ok stamps
 #
 # Runs as the unprivileged user pricefc-backup (systemd user timers). Settings come from
 # ~/.config/pricefc-backup/backup.env (setup.sh writes it). A failure sends a Telegram alert when
@@ -74,10 +75,31 @@ check() {
   done
 }
 
+# Last successes as Prometheus text for node_exporter's textfile collector (monitoring).
+export_metrics() {
+  local dir=$HOME/.local/state/pricefc-metrics m t
+  mkdir -p "$dir"
+  {
+    echo "# HELP pricefc_backup_last_success_timestamp_seconds Last successful run per mode."
+    echo "# TYPE pricefc_backup_last_success_timestamp_seconds gauge"
+    for m in backup check; do
+      [[ -f $STATE/last-ok-$m ]] || continue
+      t=$(date -u -d "$(cat "$STATE/last-ok-$m")" +%s)
+      echo "pricefc_backup_last_success_timestamp_seconds{mode=\"$m\"} $t"
+    done
+    echo "# HELP pricefc_backup_local_bytes Size of the local snapshot directory."
+    echo "# TYPE pricefc_backup_local_bytes gauge"
+    echo "pricefc_backup_local_bytes $(du -sb "$PRICEFC_BACKUP_DIR" | cut -f1)"
+  } >"$dir/backup.prom.tmp"
+  mv "$dir/backup.prom.tmp" "$dir/backup.prom"
+}
+
 case "$MODE" in
   backup) backup ;;
   check) check ;;
+  metrics) export_metrics; exit 0 ;;
   *) fail "unknown mode $MODE" ;;
 esac
 date -u +%FT%TZ >"$STATE/last-ok-$MODE"
+export_metrics
 echo "[$MODE] ok"
