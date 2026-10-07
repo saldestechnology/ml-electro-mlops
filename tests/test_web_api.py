@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,8 +15,8 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
-from pricefc.backtest import run as bt_run
 from pricefc.config import BaseConfig, load_config
+from pricefc.ingest.snapshot import write_snapshot
 from pricefc.web import metrics as web_metrics
 from pricefc.web.app import create_app
 
@@ -26,17 +26,6 @@ QS = ["q05", "q10", "q25", "q50", "q75", "q90", "q95"]
 HAND_FORECAST = [0.0, 2.0, 4.0, 8.0, 12.0, 16.0, 20.0]
 PROM_SAMPLE = re.compile(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+([^\s]+)$")
 PROM_LABEL = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"\\])*)"(?:,|$)')
-
-
-class FakeDataset:
-    def __init__(self, frame: pd.DataFrame, version: str) -> None:
-        self.frame = frame
-        self.version = version
-        self.reads = 0
-
-    def read(self) -> pd.DataFrame:
-        self.reads += 1
-        return self.frame.copy()
 
 
 @pytest.fixture
@@ -107,23 +96,23 @@ def _actual_frame(forecast_time: pd.Timestamp, y: float, naive_y: float) -> pd.D
     )
 
 
-def _install_dataset(
-    cfg: BaseConfig,
-    monkeypatch: pytest.MonkeyPatch,
-    dataset: FakeDataset,
-    zones: set[str] | None = None,
-) -> None:
-    allowed = zones or {"SE3"}
-
-    def latest_dataset(
-        base: BaseConfig, zone: str, weather_kind: str, version: str | None = None
-    ) -> FakeDataset:
-        assert weather_kind == "true_lead"
-        if zone not in allowed:
-            raise FileNotFoundError(f"no true_lead dataset for {zone}")
-        return dataset
-
-    monkeypatch.setattr(bt_run, "latest_dataset", latest_dataset)
+def _write_actuals(cfg: BaseConfig, frame: pd.DataFrame) -> None:
+    raw = frame.rename(columns={"target_time": "timestamp", "y": "price_eur_mwh"})
+    raw["resolution"] = "PT60M"
+    times = pd.DatetimeIndex(raw["timestamp"])
+    write_snapshot(
+        raw,
+        raw_root=cfg.paths.raw,
+        source="elprisetjustnu",
+        dataset="day_ahead_prices",
+        key="SE3",
+        endpoint="test",
+        query={},
+        requested_start=times.min(),
+        requested_end=times.max(),
+        pulled_at=datetime(2026, 10, 4, 11, tzinfo=UTC),
+        validation={"passed": True},
+    )
 
 
 def test_endpoints_metrics_cache_and_readable_state(
@@ -163,8 +152,7 @@ def test_endpoints_metrics_cache_and_readable_state(
     (backups / "2026-10-02").mkdir(parents=True)
     (backups / "2026-10-05").mkdir()
 
-    dataset = FakeDataset(_actual_frame(target_time, 10.0, 6.0), "test-version-a")
-    _install_dataset(cfg, monkeypatch, dataset)
+    _write_actuals(cfg, _actual_frame(target_time, 10.0, 6.0))
     client = TestClient(create_app(cfg))
 
     health = client.get("/api/health")
@@ -229,8 +217,6 @@ def test_endpoints_metrics_cache_and_readable_state(
     assert model["origins_served"] == 9
     assert model["datasets"] == {"train": "train-v1", "eval": "eval-v1", "live": "live-v1"}
     assert model["backups"] == ["2026-10-05", "2026-10-02"]
-    assert dataset.reads == 1
-
     assert client.get("/api/zones/NO1/origins").status_code == 404
     assert client.get("/api/zones/NO1/forecast").status_code == 404
     assert client.get("/api/zones/NO1/performance").status_code == 404
@@ -258,9 +244,6 @@ def test_forecast_hours_follow_stockholm_dst(
     origin = target_date - timedelta(days=1)
     target_times = pd.date_range(start_utc, periods=n_hours, freq="h")
     _write_forecast(cfg, "SE3", origin, target_times)
-    _install_dataset(
-        cfg, monkeypatch, FakeDataset(pd.DataFrame(columns=["target_time", "y"]), "dst")
-    )
     response = TestClient(create_app(cfg)).get(
         f"/api/zones/SE3/forecast?origin={origin.isoformat()}"
     )
@@ -343,7 +326,11 @@ def _install_metrics_http(
     with_runs: bool = True,
 ) -> list[tuple[str, dict[str, Any]]]:
     calls: list[tuple[str, dict[str, Any]]] = []
-    flow_ids = {"ingest-daily": "flow-ingest", "forecast-daily": "flow-forecast"}
+    flow_ids = {
+        "ingest-daily": "flow-ingest",
+        "forecast-daily": "flow-forecast",
+        "score-daily": "flow-score",
+    }
 
     def post(url: str, json: dict[str, Any], timeout: int) -> _MetricsResponse:
         assert timeout == 3
@@ -359,6 +346,7 @@ def _install_metrics_http(
                 {"flow_id": "flow-ingest"},
                 {"flow_id": "flow-forecast"},
                 {"flow_id": "flow-forecast"},
+                {"flow_id": "flow-score"},
             ]
             return _MetricsResponse(scheduled if with_runs else [])
         # History must never include future runs: they have no start time and would look newest.
@@ -437,6 +425,14 @@ def _write_raw_manifest(cfg: BaseConfig, pulled_at: str, passed: bool, key: str 
     (snapshot / "manifest.json").write_text(
         json.dumps({"pulled_at": pulled_at, "validation": {"passed": passed}})
     )
+    if passed:
+        pd.DataFrame(
+            {
+                "timestamp": [pd.Timestamp("2026-10-05T00:00:00Z")],
+                "price_eur_mwh": [1.0],
+                "resolution": ["PT60M"],
+            }
+        ).to_parquet(snapshot / "part-0.parquet", index=False)
     return snapshot
 
 
@@ -464,7 +460,12 @@ def test_metrics_exposition_and_metric_families(
     )
     _write_raw_manifest(cfg, "2026-10-05T11:00:00+00:00", True)
     _write_raw_manifest(cfg, "2026-10-06T11:00:00+00:00", False)
-    _install_dataset(cfg, monkeypatch, FakeDataset(_actual_frame(target_time, 10, 6), "metrics"))
+    _write_actuals(cfg, _actual_frame(target_time, 10, 6))
+    scores_dir = cfg.paths.data_root / "scores" / "SE3"
+    scores_dir.mkdir(parents=True)
+    pd.DataFrame({"origin_date": [today.isoformat()]}).to_parquet(
+        scores_dir / "champion.parquet", index=False
+    )
     _install_metrics_http(monkeypatch)
 
     response = TestClient(create_app(cfg)).get("/metrics")
@@ -490,6 +491,9 @@ def test_metrics_exposition_and_metric_families(
         role="challenger",
     ) == pytest.approx(_local_time(today + timedelta(days=1), 0).timestamp())
     assert _metric_value(samples, "pricefc_forecast_rows", zone="SE3", role="challenger") == 1
+    assert _metric_value(
+        samples, "pricefc_score_last_origin_timestamp_seconds", zone="SE3", role="champion"
+    ) == pytest.approx(_local_time(today, 0).timestamp())
     assert _metric_value(samples, "pricefc_model_version", zone="SE3", role="champion") == 17
     assert _metric_value(
         samples,
@@ -511,6 +515,7 @@ def test_metrics_exposition_and_metric_families(
     assert _metric_value(samples, "pricefc_prefect_up") == 1
     assert _metric_value(samples, "pricefc_mlflow_up") == 1
     assert _metric_value(samples, "pricefc_flow_runs_scheduled", flow="forecast-daily") == 2
+    assert _metric_value(samples, "pricefc_flow_runs_scheduled", flow="score-daily") == 1
     assert (
         _metric_value(samples, "pricefc_flow_last_run_state", flow="forecast-daily", state="failed")
         == 1
@@ -574,6 +579,9 @@ def test_metrics_handles_broken_forecast_file(
     broken = cfg.paths.data_root / "forecasts" / "SE3" / f"{today.isoformat()}.parquet"
     broken.parent.mkdir(parents=True)
     broken.write_bytes(b"not a parquet file")
+    broken_score = cfg.paths.data_root / "scores" / "SE3" / "champion.parquet"
+    broken_score.parent.mkdir(parents=True)
+    broken_score.write_bytes(b"not a parquet file")
     _install_metrics_http(monkeypatch)
 
     response = TestClient(create_app(cfg)).get("/metrics")
@@ -581,3 +589,4 @@ def test_metrics_handles_broken_forecast_file(
     _, samples = _parse_prometheus(response.text)
     assert _metric_value(samples, "pricefc_metrics_errors", section="forecasts") == 1
     assert _metric_value(samples, "pricefc_metrics_errors", section="quality") >= 1
+    assert _metric_value(samples, "pricefc_metrics_errors", section="scores") == 1

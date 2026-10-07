@@ -618,6 +618,28 @@ def forecast_cmd(
         raise typer.Exit(1)
 
 
+@app.command("score")
+def score_cmd(
+    zone: list[str] | None = ZONE_OPT,
+    days_back: int = typer.Option(14, "--days-back", min=1),
+    force: bool = typer.Option(False, "--force"),
+    config: Path = CONFIG_OPT,
+) -> None:
+    """Score fully published live forecasts and persist their daily metrics."""
+    from pricefc.serving.score import score_forecasts
+
+    scores = score_forecasts(load_config(config), zones=zone, days_back=days_back, force=force)
+    if not scores:
+        typer.echo("no new forecasts scored")
+        return
+    for item in scores:
+        typer.echo(
+            f"{item.zone} {item.role} {item.origin_date}: "
+            f"pinball={item.pinball:.3f}, coverage_90={item.coverage_90:.3f}, "
+            f"mae_median={item.mae_median:.3f}"
+        )
+
+
 @app.command()
 def serve() -> None:
     """Run the scheduled Prefect deployments (VPS worker; needs the `serve` extra)."""

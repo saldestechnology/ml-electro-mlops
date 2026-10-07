@@ -28,6 +28,30 @@ tests:
       - eval_time: 33h55m
         alertname: ForecastMissing
         exp_alerts: []
+  # ScoreMissing: a champion origin timestamp over 43 hours old fires after the 5m hold.
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_score_last_origin_timestamp_seconds{zone="SE3",role="champion"}'
+        values: '0x600'
+    alert_rule_test:
+      - eval_time: 43h
+        alertname: ScoreMissing
+        exp_alerts: []
+      - eval_time: 43h10m
+        alertname: ScoreMissing
+        exp_alerts:
+          - exp_labels: {severity: warning, zone: SE3, role: champion}
+            exp_annotations:
+              summary: "SE3: champion forecast scoring is stale"
+              description: "score-daily runs at 14:00 and 17:00 to allow for late day-ahead publication."
+  - interval: 5m
+    input_series:
+      - series: 'pricefc_score_last_origin_timestamp_seconds{zone="SE3",role="champion"}'
+        values: '86400x600'
+    alert_rule_test:
+      - eval_time: 48h
+        alertname: ScoreMissing
+        exp_alerts: []
   - interval: 5m
     input_series:
       - series: 'pricefc_flow_runs_scheduled{env="staging",flow="ingest-daily"}'

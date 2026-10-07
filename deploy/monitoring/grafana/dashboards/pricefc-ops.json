@@ -58,7 +58,7 @@
    "gridPos": {
     "x": 0,
     "y": 1,
-    "w": 4,
+    "w": 3,
     "h": 4
    },
    "targets": [
@@ -108,9 +108,9 @@
     "uid": "prometheus"
    },
    "gridPos": {
-    "x": 4,
+    "x": 3,
     "y": 1,
-    "w": 8,
+    "w": 6,
     "h": 4
    },
    "targets": [
@@ -145,6 +145,50 @@
   },
   {
    "type": "stat",
+   "title": "Last scored forecast",
+   "description": "Origin date of the newest scored champion forecast per zone.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 9,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_score_last_origin_timestamp_seconds{env=\"$env\", role=\"champion\"} * 1000",
+     "legendFormat": "{{zone}}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "time:ddd D MMM"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "text": {
+     "titleSize": 14,
+     "valueSize": 26
+    }
+   },
+   "id": 4
+  },
+  {
+   "type": "stat",
    "title": "Scheduled runs (next 48 h)",
    "description": "0 means Prefect's scheduler is not creating runs (2026-10-07 incident).",
    "datasource": {
@@ -152,9 +196,9 @@
     "uid": "prometheus"
    },
    "gridPos": {
-    "x": 12,
+    "x": 15,
     "y": 1,
-    "w": 4,
+    "w": 3,
     "h": 4
    },
    "targets": [
@@ -193,7 +237,7 @@
     "colorMode": "background",
     "graphMode": "none"
    },
-   "id": 4
+   "id": 5
   },
   {
    "type": "stat",
@@ -204,9 +248,9 @@
     "uid": "prometheus"
    },
    "gridPos": {
-    "x": 16,
+    "x": 18,
     "y": 1,
-    "w": 4,
+    "w": 3,
     "h": 4
    },
    "targets": [
@@ -249,7 +293,7 @@
     "colorMode": "background",
     "graphMode": "none"
    },
-   "id": 5
+   "id": 6
   },
   {
    "type": "stat",
@@ -260,9 +304,9 @@
     "uid": "prometheus"
    },
    "gridPos": {
-    "x": 20,
+    "x": 21,
     "y": 1,
-    "w": 4,
+    "w": 3,
     "h": 4
    },
    "targets": [
@@ -314,7 +358,7 @@
     "colorMode": "background",
     "graphMode": "none"
    },
-   "id": 6
+   "id": 7
   },
   {
    "type": "table",
@@ -403,7 +447,7 @@
      }
     }
    ],
-   "id": 7
+   "id": 8
   },
   {
    "type": "row",
@@ -416,7 +460,7 @@
     "h": 1
    },
    "panels": [],
-   "id": 8
+   "id": 9
   },
   {
    "type": "table",
@@ -525,7 +569,7 @@
      }
     }
    ],
-   "id": 9
+   "id": 10
   },
   {
    "type": "table",
@@ -616,7 +660,7 @@
      }
     }
    ],
-   "id": 10
+   "id": 11
   },
   {
    "type": "state-timeline",
@@ -655,7 +699,7 @@
     "showValue": "never",
     "mergeValues": true
    },
-   "id": 11
+   "id": 12
   },
   {
    "type": "row",
@@ -668,7 +712,7 @@
     "h": 1
    },
    "panels": [],
-   "id": 12
+   "id": 13
   },
   {
    "type": "timeseries",
@@ -715,7 +759,7 @@
      ]
     }
    },
-   "id": 13
+   "id": 14
   },
   {
    "type": "timeseries",
@@ -753,7 +797,7 @@
     "overrides": []
    },
    "options": {},
-   "id": 14
+   "id": 15
   },
   {
    "type": "timeseries",
@@ -791,7 +835,7 @@
     "overrides": []
    },
    "options": {},
-   "id": 15
+   "id": 16
   },
   {
    "type": "timeseries",
@@ -829,7 +873,7 @@
     "overrides": []
    },
    "options": {},
-   "id": 16
+   "id": 17
   },
   {
    "type": "table",
@@ -913,7 +957,7 @@
      }
     }
    ],
-   "id": 17
+   "id": 18
   }
  ]
 }

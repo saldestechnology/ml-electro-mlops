@@ -21,6 +21,7 @@ import requests
 import structlog
 
 from pricefc.config import BaseConfig
+from pricefc.serving.score import enrich, load_actuals, score
 from pricefc.web import data
 from pricefc.web.constants import BACKTEST_BASELINES
 
@@ -28,7 +29,7 @@ log = structlog.get_logger(__name__)
 
 CACHE_SECONDS = 60.0
 FORECAST_CACHE_MAX = 128
-FLOWS = ("ingest-daily", "forecast-daily")
+FLOWS = ("ingest-daily", "forecast-daily", "score-daily")
 _SNAKE_CASE = re.compile(r"[^a-z0-9]+")
 
 _METRIC_DEFINITIONS: dict[str, tuple[str, str]] = {
@@ -43,6 +44,10 @@ _METRIC_DEFINITIONS: dict[str, tuple[str, str]] = {
     ),
     "pricefc_forecast_made_at_timestamp_seconds": (
         "Unix time when the newest forecast was made.",
+        "gauge",
+    ),
+    "pricefc_score_last_origin_timestamp_seconds": (
+        "Local midnight of the newest scored forecast origin.",
         "gauge",
     ),
     "pricefc_forecast_rows": ("Rows in the newest forecast file.", "gauge"),
@@ -102,7 +107,7 @@ _METRIC_DEFINITIONS: dict[str, tuple[str, str]] = {
     "pricefc_metrics_errors": ("Errors encountered while rendering a metrics section.", "gauge"),
 }
 
-_SECTIONS = ("forecasts", "state", "quality", "raw", "prefect", "mlflow")
+_SECTIONS = ("forecasts", "state", "quality", "scores", "raw", "prefect", "mlflow")
 
 
 class _Registry:
@@ -246,6 +251,7 @@ class MetricsCollector:
                 ("forecasts", self._collect_forecasts),
                 ("state", self._collect_states),
                 ("quality", self._collect_quality),
+                ("scores", self._collect_scores),
                 ("raw", self._collect_raw),
                 ("prefect", self._collect_prefect),
                 ("mlflow", self._collect_mlflow),
@@ -373,7 +379,7 @@ class MetricsCollector:
                 for item in files
             )
             try:
-                actuals = data._actual_index(self.base, zone) if recent_exists else None
+                actuals = load_actuals(self.base, zone) if recent_exists else None
             except Exception as exc:
                 actuals = None
                 errors += 1
@@ -390,7 +396,7 @@ class MetricsCollector:
                             continue
                         frame = frame.copy()
                         frame["origin_date"] = item.origin.isoformat()
-                        parts.append(data._enrich(frame, actuals))
+                        parts.append(enrich(frame, actuals))
                     except Exception as exc:
                         errors += 1
                         log.warning(
@@ -410,14 +416,14 @@ class MetricsCollector:
                         window_rows = all_rows[all_rows["origin_date"] >= window_cutoff]
                     try:
                         result = (
-                            data._score(window_rows, self.base.quantiles)
+                            score(window_rows, self.base.quantiles)
                             if not window_rows.empty
                             else None
                         )
                         scored_days = 0
                         if not window_rows.empty:
                             scored_days = sum(
-                                data._score(day_rows, self.base.quantiles) is not None
+                                score(day_rows, self.base.quantiles) is not None
                                 for _, day_rows in window_rows.groupby("origin_date", sort=True)
                             )
                         registry.add("pricefc_scored_days", float(scored_days), **labels)
@@ -444,6 +450,39 @@ class MetricsCollector:
 
         for zone, values in BACKTEST_BASELINES.items():
             registry.add("pricefc_backtest_pinball", values["pinball"], zone=zone)
+        return errors
+
+    def _collect_scores(self, registry: _Registry) -> int:
+        errors = 0
+        for zone in self.base.zones:
+            for role in ("champion", "challenger"):
+                path = self.base.paths.data_root / "scores" / zone / f"{role}.parquet"
+                if not path.is_file():
+                    continue
+                try:
+                    frame = pd.read_parquet(path)
+                    if frame.empty or "origin_date" not in frame:
+                        continue
+                    origins = pd.to_datetime(frame["origin_date"], errors="coerce").dropna()
+                    if origins.empty:
+                        continue
+                    latest = origins.max().date()
+                    timestamp = pd.Timestamp(latest).tz_localize(data.LOCAL_TZ).timestamp()
+                    registry.add(
+                        "pricefc_score_last_origin_timestamp_seconds",
+                        timestamp,
+                        zone=zone,
+                        role=role,
+                    )
+                except Exception as exc:
+                    errors += 1
+                    log.warning(
+                        "metrics_score_store_failed",
+                        zone=zone,
+                        role=role,
+                        path=str(path),
+                        error=str(exc),
+                    )
         return errors
 
     def _raw_series(self, series_dir: Path) -> tuple[float | None, float | None, bool | None, int]:

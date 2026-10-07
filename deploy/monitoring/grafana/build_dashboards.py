@@ -159,7 +159,7 @@ def operations() -> dict[str, Any]:
                 )
             ],
             g,
-            4,
+            3,
             4,
             defaults=thresholds((None, "green"), (1, "red")),
             options={"colorMode": "background", "graphMode": "none"},
@@ -179,7 +179,7 @@ def operations() -> dict[str, Any]:
                 )
             ],
             g,
-            8,
+            6,
             4,
             unit="time:ddd D MMM",
             desc="Delivery day of the newest champion forecast per zone. After 09:30 this should be tomorrow.",
@@ -194,10 +194,36 @@ def operations() -> dict[str, Any]:
     ps.append(
         panel(
             "stat",
+            "Last scored forecast",
+            [
+                series(
+                    target(
+                        'pricefc_score_last_origin_timestamp_seconds{env="$env", role="champion"} * 1000',
+                        "{{zone}}",
+                        True,
+                    )
+                )
+            ],
+            g,
+            6,
+            4,
+            unit="time:ddd D MMM",
+            desc="Origin date of the newest scored champion forecast per zone.",
+            options={
+                "colorMode": "none",
+                "graphMode": "none",
+                "textMode": "value_and_name",
+                "text": {"titleSize": 14, "valueSize": 26},
+            },
+        )
+    )
+    ps.append(
+        panel(
+            "stat",
             "Scheduled runs (next 48 h)",
             [series(target('sum(pricefc_flow_runs_scheduled{env="$env"})', instant=True))],
             g,
-            4,
+            3,
             4,
             desc="0 means Prefect's scheduler is not creating runs (2026-10-07 incident).",
             defaults=thresholds((None, "red"), (1, "green")),
@@ -217,7 +243,7 @@ def operations() -> dict[str, Any]:
                 )
             ],
             g,
-            4,
+            3,
             4,
             unit="s",
             defaults=thresholds((None, "green"), (30 * 3600, "orange"), (36 * 3600, "red")),
@@ -230,7 +256,7 @@ def operations() -> dict[str, Any]:
             "Services",
             [series(target("min(up)", instant=True))],
             g,
-            4,
+            3,
             4,
             desc="1 if every scrape target (incl. the tunnel to the main VPS) is up.",
             defaults={

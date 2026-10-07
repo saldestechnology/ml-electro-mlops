@@ -13,7 +13,7 @@ import yaml
 from pricefc.config import BaseConfig, config_hash
 from pricefc.lineage import file_hash, git_info
 
-EXPERIMENTS = ("ingest", "datasets", "training", "backtest", "forecast-live")
+EXPERIMENTS = ("ingest", "datasets", "training", "backtest", "forecast-live", "forecast-score")
 REQUIRED_TAGS = (
     "zone",
     "resolution",
