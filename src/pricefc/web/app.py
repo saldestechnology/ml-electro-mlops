@@ -11,16 +11,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 
 from pricefc.config import BaseConfig, load_config
 from pricefc.web import data
-
-BACKTEST_BASELINES: dict[str, dict[str, float]] = {
-    "SE1": {"pinball": 4.61, "naive_7d_pinball": 11.12},
-    "SE2": {"pinball": 4.53, "naive_7d_pinball": 11.48},
-    "SE3": {"pinball": 5.25, "naive_7d_pinball": 11.61},
-    "SE4": {"pinball": 6.39, "naive_7d_pinball": 13.69},
-}
+from pricefc.web.constants import BACKTEST_BASELINES
+from pricefc.web.metrics import MetricsCollector
 
 
 class _SPAStaticFiles(StaticFiles):
@@ -42,6 +38,7 @@ def create_app(base: BaseConfig | None = None) -> FastAPI:
     base = base or load_config(Path("configs/base.yaml"))
     env = os.environ.get("PRICEFC_ENV", "dev")
     app = FastAPI(title="pricefc web API")
+    metrics = MetricsCollector(base)
 
     if env.lower() == "dev":
         app.add_middleware(
@@ -58,6 +55,13 @@ def create_app(base: BaseConfig | None = None) -> FastAPI:
             "env": os.environ.get("PRICEFC_ENV", "dev"),
             "git_sha": os.environ.get("PRICEFC_GIT_SHA", "unknown"),
         }
+
+    @app.get("/metrics", include_in_schema=True)
+    def prometheus_metrics() -> Response:
+        return Response(
+            content=metrics.render(),
+            media_type="text/plain; version=0.0.4",
+        )
 
     @app.get("/api/zones")
     def zones() -> list[dict[str, Any]]:
