@@ -42,6 +42,34 @@ staging, then approve the `production` deployment in the Actions run.
 
 ## Web dashboard
 
+### Metrics
+
+The same web app serves Prometheus 0.0.4 text at /metrics, cached for about 60 seconds. Keep the
+endpoint private and scrape it from the backup VPS through an SSH tunnel.
+
+Forecast and model gauges: pricefc_build_info,
+pricefc_forecast_last_origin_timestamp_seconds,
+pricefc_forecast_target_date_timestamp_seconds, pricefc_forecast_made_at_timestamp_seconds,
+pricefc_forecast_rows, pricefc_model_version,
+pricefc_state_last_origin_timestamp_seconds, and pricefc_backtest_pinball.
+
+Quality gauges: pricefc_pinball_mean, pricefc_naive_pinball_mean, pricefc_coverage_ratio, and
+pricefc_scored_days, labelled by zone, role, and 7-day or 14-day window (coverage also has
+band="90").
+
+Freshness and service gauges: pricefc_raw_latest_valid_pulled_at_timestamp_seconds,
+pricefc_raw_latest_pull_valid, pricefc_prefect_up,
+pricefc_flow_last_success_timestamp_seconds, pricefc_flow_last_run_timestamp_seconds,
+pricefc_flow_last_run_state, pricefc_flow_last_success_duration_seconds,
+pricefc_flow_runs_scheduled, and pricefc_mlflow_up. Prefect configuration uses
+PRICEFC_PREFECT_API_URL (default http://localhost:4200/api) and MLflow uses PRICEFC_MLFLOW_URL
+(default http://localhost:5000). The scheduled-run gauge counts the next 48 hours; zero is a
+useful alert because it can indicate a broken Prefect scheduler.
+
+pricefc_metrics_render_seconds reports uncached render time and
+pricefc_metrics_errors{section} reports section failures. A down Prefect or MLflow service does
+not prevent the other metric sections from rendering.
+
 Install the optional `web` extra and run `pricefc web` locally; the API listens on
 `127.0.0.1:8000`. To open a private pod's dashboard from your laptop, forward its loopback port
 over SSH, for example `ssh -N -L 8000:127.0.0.1:8000 pricefc-vps`, then visit
