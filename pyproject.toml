@@ -39,7 +39,9 @@ timesfm = [
 # Research only: the deployable models do not use XReg, so the serving image omits it.
 timesfm-xreg = ["pricefc[timesfm]", "jax>=0.7", "scikit-learn>=1.5"]
 # Scheduling and serving on the VPS (M6).
-serve = ["prefect>=3.8"]
+# SQLAlchemy 2.1 breaks Prefect 3.8's scheduler on SQLite ("Can't evaluate bulk DML
+# statement"): no scheduled run is ever created. Lift once Prefect supports 2.1.
+serve = ["prefect>=3.8", "sqlalchemy>=2.0,<2.1"]
 web = ["fastapi>=0.115", "uvicorn>=0.30"]
 
 [project.scripts]
