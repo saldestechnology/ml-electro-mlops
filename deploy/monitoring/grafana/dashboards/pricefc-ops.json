@@ -128,14 +128,18 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "dateTimeAsLocalNoDateIfToday"
+     "unit": "time:ddd D MMM"
     },
     "overrides": []
    },
    "options": {
     "colorMode": "none",
     "graphMode": "none",
-    "textMode": "value_and_name"
+    "textMode": "value_and_name",
+    "text": {
+     "titleSize": 14,
+     "valueSize": 26
+    }
    },
    "id": 3
   },
@@ -313,36 +317,92 @@
    "id": 6
   },
   {
-   "type": "alertlist",
-   "title": "Alerts",
-   "description": "",
+   "type": "table",
+   "title": "Alerts (firing and pending)",
+   "description": "Prometheus' alert state; Telegram (FC Mon) gets the firing ones via Alertmanager.",
    "datasource": {
-    "type": "alertmanager",
-    "uid": "alertmanager"
+    "type": "prometheus",
+    "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
     "y": 5,
     "w": 24,
-    "h": 6
+    "h": 5
    },
-   "targets": [],
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ALERTS{severity!=\"none\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    }
+   ],
    "fieldConfig": {
     "defaults": {
      "unit": "short"
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "alertstate"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "firing": {
+            "color": "red"
+           },
+           "pending": {
+            "color": "orange"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
    },
    "options": {
-    "alertInstanceLabelFilter": "",
-    "datasource": "Alertmanager",
-    "groupMode": "default",
-    "stateFilter": {
-     "firing": true,
-     "pending": true
-    },
-    "viewMode": "list"
+    "footer": {
+     "show": false
+    }
    },
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "Value": true
+      },
+      "indexByName": {
+       "alertname": 0,
+       "alertstate": 1,
+       "severity": 2
+      }
+     }
+    }
+   ],
    "id": 7
   },
   {
@@ -351,7 +411,7 @@
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 11,
+    "y": 10,
     "w": 24,
     "h": 1
    },
@@ -368,7 +428,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 12,
+    "y": 11,
     "w": 12,
     "h": 6
    },
@@ -382,7 +442,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "A"
+     "refId": "A",
+     "format": "table"
     },
     {
      "datasource": {
@@ -393,7 +454,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "B"
+     "refId": "B",
+     "format": "table"
     },
     {
      "datasource": {
@@ -404,7 +466,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "C"
+     "refId": "C",
+     "format": "table"
     }
    ],
    "fieldConfig": {
@@ -467,14 +530,14 @@
   {
    "type": "table",
    "title": "Raw data freshness",
-   "description": "",
+   "description": "Per source: age of the oldest key's last valid pull, and whether every newest pull validated.",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 12,
-    "y": 12,
+    "y": 11,
     "w": 12,
     "h": 6
    },
@@ -484,33 +547,47 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "time() - pricefc_raw_latest_valid_pulled_at_timestamp_seconds{env=\"$env\"}",
+     "expr": "max by (source, dataset) (time() - pricefc_raw_latest_valid_pulled_at_timestamp_seconds{env=\"$env\"})",
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "A"
+     "refId": "A",
+     "format": "table"
     },
     {
      "datasource": {
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "pricefc_raw_latest_pull_valid{env=\"$env\"}",
+     "expr": "min by (source, dataset) (pricefc_raw_latest_pull_valid{env=\"$env\"})",
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "B"
+     "refId": "B",
+     "format": "table"
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "s"
+     "unit": "short"
     },
     "overrides": [
      {
       "matcher": {
        "id": "byName",
-       "options": "all newest pulls valid"
+       "options": "last valid pull (oldest key)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "newest pulls valid"
       },
       "properties": [
        {
@@ -527,38 +604,14 @@
      "id": "merge"
     },
     {
-     "id": "groupBy",
-     "options": {
-      "fields": {
-       "source": {
-        "operation": "groupby",
-        "aggregations": []
-       },
-       "dataset": {
-        "operation": "groupby",
-        "aggregations": []
-       },
-       "Value #A": {
-        "operation": "aggregate",
-        "aggregations": [
-         "max"
-        ]
-       },
-       "Value #B": {
-        "operation": "aggregate",
-        "aggregations": [
-         "min"
-        ]
-       }
-      }
-     }
-    },
-    {
      "id": "organize",
      "options": {
+      "excludeByName": {
+       "Time": true
+      },
       "renameByName": {
-       "Value #A (max)": "oldest key's last valid pull",
-       "Value #B (min)": "all newest pulls valid"
+       "Value #A": "last valid pull (oldest key)",
+       "Value #B": "newest pulls valid"
       }
      }
     }
@@ -575,7 +628,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 18,
+    "y": 17,
     "w": 24,
     "h": 5
    },
@@ -610,7 +663,7 @@
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 23,
+    "y": 22,
     "w": 24,
     "h": 1
    },
@@ -627,7 +680,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 24,
+    "y": 23,
     "w": 12,
     "h": 7
    },
@@ -674,7 +727,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 24,
+    "y": 23,
     "w": 6,
     "h": 7
    },
@@ -712,7 +765,7 @@
    },
    "gridPos": {
     "x": 18,
-    "y": 24,
+    "y": 23,
     "w": 6,
     "h": 7
    },
@@ -750,7 +803,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 31,
+    "y": 30,
     "w": 12,
     "h": 6
    },
@@ -788,7 +841,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 31,
+    "y": 30,
     "w": 12,
     "h": 6
    },
@@ -802,7 +855,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "A"
+     "refId": "A",
+     "format": "table"
     },
     {
      "datasource": {
@@ -813,7 +867,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "B"
+     "refId": "B",
+     "format": "table"
     },
     {
      "datasource": {
@@ -824,7 +879,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "C"
+     "refId": "C",
+     "format": "table"
     }
    ],
    "fieldConfig": {

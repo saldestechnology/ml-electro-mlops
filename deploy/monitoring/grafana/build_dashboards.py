@@ -36,7 +36,7 @@ class Grid:
 
 
 def target(expr: str, legend: str = "", instant: bool = False) -> dict[str, Any]:
-    return {
+    t = {
         "datasource": DS,
         "expr": expr,
         "legendFormat": legend or "__auto",
@@ -44,6 +44,15 @@ def target(expr: str, legend: str = "", instant: bool = False) -> dict[str, Any]
         "range": not instant,
         "refId": "A",
     }
+    if instant:
+        # One frame per query with labels as columns; tables merge these on the labels.
+        t["format"] = "table"
+    return t
+
+
+def series(t: dict[str, Any]) -> dict[str, Any]:
+    t.pop("format", None)
+    return t
 
 
 def with_refs(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -142,9 +151,11 @@ def operations() -> dict[str, Any]:
             "stat",
             "Firing alerts",
             [
-                target(
-                    'count(ALERTS{alertstate="firing", severity!="none"}) or vector(0)',
-                    instant=True,
+                series(
+                    target(
+                        'count(ALERTS{alertstate="firing", severity!="none"}) or vector(0)',
+                        instant=True,
+                    )
                 )
             ],
             g,
@@ -159,25 +170,32 @@ def operations() -> dict[str, Any]:
             "stat",
             "Champion forecast for",
             [
-                target(
-                    'pricefc_forecast_target_date_timestamp_seconds{env="$env", role="champion"} * 1000',
-                    "{{zone}}",
-                    True,
+                series(
+                    target(
+                        'pricefc_forecast_target_date_timestamp_seconds{env="$env", role="champion"} * 1000',
+                        "{{zone}}",
+                        True,
+                    )
                 )
             ],
             g,
             8,
             4,
-            unit="dateTimeAsLocalNoDateIfToday",
+            unit="time:ddd D MMM",
             desc="Delivery day of the newest champion forecast per zone. After 09:30 this should be tomorrow.",
-            options={"colorMode": "none", "graphMode": "none", "textMode": "value_and_name"},
+            options={
+                "colorMode": "none",
+                "graphMode": "none",
+                "textMode": "value_and_name",
+                "text": {"titleSize": 14, "valueSize": 26},
+            },
         )
     )
     ps.append(
         panel(
             "stat",
             "Scheduled runs (next 48 h)",
-            [target('sum(pricefc_flow_runs_scheduled{env="$env"})', instant=True)],
+            [series(target('sum(pricefc_flow_runs_scheduled{env="$env"})', instant=True))],
             g,
             4,
             4,
@@ -191,9 +209,11 @@ def operations() -> dict[str, Any]:
             "stat",
             "Last backup",
             [
-                target(
-                    '(time() - pricefc_backup_last_success_timestamp_seconds{mode="backup"})',
-                    instant=True,
+                series(
+                    target(
+                        '(time() - pricefc_backup_last_success_timestamp_seconds{mode="backup"})',
+                        instant=True,
+                    )
                 )
             ],
             g,
@@ -208,7 +228,7 @@ def operations() -> dict[str, Any]:
         panel(
             "stat",
             "Services",
-            [target("min(up)", instant=True)],
+            [series(target("min(up)", instant=True))],
             g,
             4,
             4,
@@ -224,20 +244,43 @@ def operations() -> dict[str, Any]:
     )
     ps.append(
         panel(
-            "alertlist",
-            "Alerts",
-            [],
+            "table",
+            "Alerts (firing and pending)",
+            [target('ALERTS{severity!="none"}', instant=True)],
             g,
             24,
-            6,
-            options={
-                "alertInstanceLabelFilter": "",
-                "datasource": "Alertmanager",
-                "groupMode": "default",
-                "stateFilter": {"firing": True, "pending": True},
-                "viewMode": "list",
-            },
-            datasource={"type": "alertmanager", "uid": "alertmanager"},
+            5,
+            desc="Prometheus' alert state; Telegram (FC Mon) gets the firing ones via Alertmanager.",
+            transformations=[
+                {
+                    "id": "organize",
+                    "options": {
+                        "excludeByName": {"Time": True, "__name__": True, "Value": True},
+                        "indexByName": {"alertname": 0, "alertstate": 1, "severity": 2},
+                    },
+                }
+            ],
+            overrides=[
+                {
+                    "matcher": {"id": "byName", "options": "alertstate"},
+                    "properties": [
+                        {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+                        {
+                            "id": "mappings",
+                            "value": [
+                                {
+                                    "type": "value",
+                                    "options": {
+                                        "firing": {"color": "red"},
+                                        "pending": {"color": "orange"},
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ],
+            options={"footer": {"show": False}},
         )
     )
 
@@ -296,43 +339,40 @@ def operations() -> dict[str, Any]:
             "Raw data freshness",
             [
                 target(
-                    f'{age.format("pricefc_raw_latest_valid_pulled_at_timestamp_seconds")}{{env="$env"}}',
+                    'max by (source, dataset) (time() - pricefc_raw_latest_valid_pulled_at_timestamp_seconds{env="$env"})',
                     instant=True,
                 ),
-                target('pricefc_raw_latest_pull_valid{env="$env"}', instant=True),
+                target(
+                    'min by (source, dataset) (pricefc_raw_latest_pull_valid{env="$env"})',
+                    instant=True,
+                ),
             ],
             g,
             12,
             6,
-            unit="s",
+            desc="Per source: age of the oldest key's last valid pull, and whether every newest pull validated.",
             transformations=[
                 {"id": "merge"},
                 {
-                    "id": "groupBy",
-                    "options": {
-                        "fields": {
-                            "source": {"operation": "groupby", "aggregations": []},
-                            "dataset": {"operation": "groupby", "aggregations": []},
-                            "Value #A": {"operation": "aggregate", "aggregations": ["max"]},
-                            "Value #B": {"operation": "aggregate", "aggregations": ["min"]},
-                        }
-                    },
-                },
-                {
                     "id": "organize",
                     "options": {
+                        "excludeByName": {"Time": True},
                         "renameByName": {
-                            "Value #A (max)": "oldest key's last valid pull",
-                            "Value #B (min)": "all newest pulls valid",
-                        }
+                            "Value #A": "last valid pull (oldest key)",
+                            "Value #B": "newest pulls valid",
+                        },
                     },
                 },
             ],
             overrides=[
                 {
-                    "matcher": {"id": "byName", "options": "all newest pulls valid"},
+                    "matcher": {"id": "byName", "options": "last valid pull (oldest key)"},
+                    "properties": [{"id": "unit", "value": "s"}],
+                },
+                {
+                    "matcher": {"id": "byName", "options": "newest pulls valid"},
                     "properties": [{"id": "unit", "value": "bool_yes_no"}],
-                }
+                },
             ],
         )
     )

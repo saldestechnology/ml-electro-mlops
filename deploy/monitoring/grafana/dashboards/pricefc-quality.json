@@ -93,7 +93,8 @@
      "legendFormat": "{{zone}}",
      "instant": true,
      "range": false,
-     "refId": "A"
+     "refId": "A",
+     "format": "table"
     }
    ],
    "fieldConfig": {
@@ -147,7 +148,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "A"
+     "refId": "A",
+     "format": "table"
     },
     {
      "datasource": {
@@ -158,7 +160,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "B"
+     "refId": "B",
+     "format": "table"
     },
     {
      "datasource": {
@@ -169,7 +172,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "C"
+     "refId": "C",
+     "format": "table"
     },
     {
      "datasource": {
@@ -180,7 +184,8 @@
      "legendFormat": "__auto",
      "instant": true,
      "range": false,
-     "refId": "D"
+     "refId": "D",
+     "format": "table"
     }
    ],
    "fieldConfig": {
