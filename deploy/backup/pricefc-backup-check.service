@@ -1,0 +1,8 @@
+[Unit]
+Description=pricefc: verify the Storage Box copy and test-restore MLflow
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/lib/pricefc-backup/run.sh check
+Nice=10
+IOSchedulingClass=idle

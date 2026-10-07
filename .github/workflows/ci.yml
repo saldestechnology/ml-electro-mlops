@@ -15,7 +15,7 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run mypy
       - run: uv run pytest
-      - run: shellcheck deploy/vps/*.sh deploy/vault/*.sh tools/*.sh
+      - run: shellcheck deploy/vps/*.sh deploy/vault/*.sh deploy/backup/*.sh tools/*.sh
   web:
     runs-on: ubuntu-latest
     defaults:

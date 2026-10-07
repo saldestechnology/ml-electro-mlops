@@ -3,6 +3,11 @@
 #
 #   tools/backup_vps.sh [env ...]          default: staging (add production once it runs)
 #   PRICEFC_BACKUP_DIR=/Volumes/External/Backups/pricefc   where snapshots go (outside the repo)
+#   PRICEFC_BACKUP_REMOTE_DIR=pricefc/   remote source; "./" behind the backup key's rrsync
+#   PRICEFC_BACKUP_KEEP_DAILY=14 PRICEFC_BACKUP_KEEP_WEEKLY=8
+#
+# Runs on macOS (the laptop) and Linux (the backup VPS, deploy/backup/). Remote work goes
+# through ~/bin/backup-helper on the VPS, which the backup VPS's key is restricted to.
 #
 # Each run makes a dated snapshot <dir>/<env>/<UTC timestamp>/ with rsync --link-dest against
 # the previous one, so unchanged files are hard links and cost no space. SQLite databases
@@ -15,8 +20,9 @@
 set -euo pipefail
 
 DEST="${PRICEFC_BACKUP_DIR:-/Volumes/External/Backups/pricefc}"
-KEEP_DAILY=14
-KEEP_WEEKLY=8
+REMOTE_DIR="${PRICEFC_BACKUP_REMOTE_DIR:-pricefc/}"
+KEEP_DAILY="${PRICEFC_BACKUP_KEEP_DAILY:-14}"
+KEEP_WEEKLY="${PRICEFC_BACKUP_KEEP_WEEKLY:-8}"
 
 host_for() {
   case "$1" in
@@ -26,11 +32,17 @@ host_for() {
   esac
 }
 
-# SQLite online backup inside a container: <container> <db path> <backup path>.
-# The arguments are fixed names from this script, expanded here on purpose.
-# shellcheck disable=SC2029
-sqlite_backup() {
-  ssh "$HOST" "podman exec $1 python -c \"import sqlite3; s = sqlite3.connect('$2'); d = sqlite3.connect('$3'); s.backup(d); d.close(); s.close()\""
+# The VPS-side helper (deploy/backup/backup-helper.sh): snapshot | cleanup.
+# shellcheck disable=SC2029  # the subcommand is one of two fixed words, expanded here on purpose
+helper() {
+  ssh "$HOST" "bin/backup-helper $1"
+}
+
+# ISO week (YYYY-WW) of a snapshot name YYYYmmddTHHMMSSZ, on BSD or GNU date.
+iso_week() {
+  local s=$1
+  date -j -u -f '%Y%m%dT%H%M%SZ' "$s" +%G-%V 2>/dev/null ||
+    date -u -d "${s:0:4}-${s:4:2}-${s:6:2} ${s:9:2}:${s:11:2}:${s:13:2}" +%G-%V 2>/dev/null
 }
 
 prune() {
@@ -43,7 +55,7 @@ prune() {
     ((n <= KEEP_DAILY)) && keep="$keep$snap "
   done
   for snap in $snaps; do
-    week=$(date -j -u -f '%Y%m%dT%H%M%SZ' "$(basename "$snap")" +%G-%V 2>/dev/null) || continue
+    week=$(iso_week "$(basename "$snap")") || continue
     if [[ "$weeks" != *" $week "* ]] && ((nweeks < KEEP_WEEKLY)); then
       weeks="$weeks$week "
       nweeks=$((nweeks + 1))
@@ -71,8 +83,7 @@ for ENV in "${@:-staging}"; do
   root="$DEST/$ENV"
   mkdir -p "$root"
   echo "[backup:$ENV] database snapshots"
-  sqlite_backup pricefc-mlflow /data/mlflow/mlflow.db /data/mlflow/backup.db
-  sqlite_backup pricefc-prefect /data/prefect/prefect.db /data/prefect/backup.db
+  helper snapshot
 
   link=--link-dest=/nonexistent
   [[ -d "$root/latest" ]] && link="--link-dest=$root/latest/"
@@ -81,10 +92,10 @@ for ENV in "${@:-staging}"; do
   rsync -a --delete "$link" \
     --exclude 'data/hf-cache/' --exclude '.*.tmp' --exclude '*.tmp' \
     --exclude 'mlflow/mlflow.db*' --exclude 'prefect/prefect.db*' \
-    "$HOST:pricefc/" "$tmp/"
+    "$HOST:$REMOTE_DIR" "$tmp/"
   mv "$tmp/mlflow/backup.db" "$tmp/mlflow/mlflow.db"
   mv "$tmp/prefect/backup.db" "$tmp/prefect/prefect.db"
-  ssh "$HOST" 'rm -f pricefc/mlflow/backup.db pricefc/prefect/backup.db'
+  helper cleanup
 
   # Restorable: both databases pass SQLite's integrity check.
   for db in "$tmp/mlflow/mlflow.db" "$tmp/prefect/prefect.db"; do

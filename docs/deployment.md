@@ -221,25 +221,75 @@ The VPS is shared with other workloads. Do not reboot, run a full upgrade, or ch
 firewall settings without the owner. Disk is limited (~15 GB free): images share their
 dependency layer, and `deploy` prunes dangling images after a healthy deploy.
 
-## Backups (pulled to the owner's laptop)
+## Backups
 
-`tools/backup_vps.sh [env ...]` pulls `~/pricefc/` of an environment (raw snapshots, datasets,
-live rows, forecasts, served states and their backups, MLflow database and artifacts, Prefect
-database) into `~/Backups/pricefc/<env>/<UTC timestamp>/`. The laptop connects to the VPS, never
-the reverse. Snapshots are hard-linked against the previous one (unchanged files cost nothing);
-SQLite databases are copied with SQLite's online backup API inside their containers and must
-pass `pragma integrity_check`. Kept: newest 14 plus one per ISO week for 8 weeks. Not included:
-`hf-cache` (re-downloadable) and Vault (raft snapshots need the owner's operator token).
+Three layers, each covering what the others cannot:
 
-Scheduled daily at 03:30 by launchd (`tools/launchd/com.pricefc.backup.plist`; a missed slot runs
-on wake; log `~/Backups/pricefc/backup.log`). macOS denies launchd jobs access to `~/Documents`,
-so the job runs an installed copy: after changing the script, re-run
-`install -m 755 tools/backup_vps.sh ~/.local/libexec/pricefc-backup.sh`.
+| Layer | Where | What | Kept |
+|---|---|---|---|
+| Hetzner backups | Hetzner, same account | whole-disk image of the main VPS | 7 days |
+| Pull backups | backup VPS 62.238.60.155 (user `pricefc-backup`), `~/backups` | `~/pricefc/` of each environment, consistent SQLite copies | 7 days |
+| Off-site copy | Storage Box sub-account `u685924-sub1` (`ml-electro-mlops/`), restic, encrypted | the newest pull, deduplicated | 14 daily, 8 weekly, 12 monthly |
 
-Restore (one environment, after stopping its pod: `systemctl --user stop pricefc-pod.service`
-as the environment user):
+The backup VPS connects to the main VPS, never the reverse: a compromised main VPS cannot
+reach or delete the backups. Its key (`~pricefc-backup/.ssh/pricefc_pull`) sits in each environment user's
+`authorized_keys` as `command="~/bin/backup-helper",restrict,from="62.238.60.155"`, so it can
+only take the SQLite snapshots, remove them again and run a read-only rsync confined to
+`~/pricefc` (`deploy/backup/backup-helper.sh`, `rrsync -ro`); no shell, no `~/.ssh`, no Vault
+credentials. Everything there runs as the unprivileged user `pricefc-backup` (systemd user timers, linger).
+`pricefc-backup.timer` runs `deploy/backup/run.sh backup` at 03:30 Stockholm time;
+`pricefc-backup-check.timer` runs `run.sh check` on Sundays at 05:00 (`restic check` of 10 % of
+the data and a restore of each environment's `mlflow.db` from the Storage Box, which must pass
+`integrity_check` and contain the champion aliases). Failures go to Telegram when
+`~/.config/pricefc-backup/telegram.env` exists; each success writes
+`~/.local/state/pricefc-backup/last-ok-{backup,check}` for the monitoring.
+
+Pulled: raw snapshots, silver lake, datasets, live rows, forecasts, served states and their
+backups, MLflow database and artifacts, Prefect database. Not pulled: `hf-cache`
+(re-downloadable) and Vault (raft snapshots need the owner's operator token).
+
+**The restic password** (`~/.config/pricefc-backup/restic.pass` on the backup VPS) is the only key to
+the Storage Box copy. The owner keeps a copy in their password manager; without it, the
+off-site copy is unreadable if the backup VPS is lost.
+
+The backup VPS is shared with the owner's own use: root cannot log in over SSH, passwords are
+off, and sshd's `AllowUsers` (in `00-ponder-hardening.conf`) lists `psy pricefc-backup`. Root
+(via the owner's sudo account) did only: install restic, rsync, sqlite3, curl; create
+`pricefc-backup` with linger; add it to `AllowUsers`.
+
+Setup (as `pricefc-backup`, from a copy of `deploy/backup/` plus `tools/backup_vps.sh`):
 
 ```bash
-rsync -a ~/Backups/pricefc/staging/latest/ pricefc-vps-staging:pricefc/
-ssh pricefc-vps-staging 'rm -f pricefc/mlflow/mlflow.db-wal pricefc/prefect/prefect.db-wal pricefc/prefect/prefect.db-shm && systemctl --user start pricefc-pod.service'
+./setup.sh u685924-sub1 u685924-sub1.your-storagebox.de staging   # prints the two public keys
+# Storage Box (owner, own terminal; the sub-account password is typed once):
+echo '<pricefc_storagebox.pub>' | ssh -p 23 u685924-sub1@u685924-sub1.your-storagebox.de install-ssh-key
+# Main VPS, per env user: install the helper and append the printed restricted line
+#   install -m 755 backup-helper.sh ~/bin/backup-helper   (bootstrap.sh does both on a re-run)
+set -a; . ~/.config/pricefc-backup/backup.env; set +a; restic init
+systemctl --user start pricefc-backup.service && journalctl --user -u pricefc-backup -n 20
+systemctl --user enable --now pricefc-backup.timer pricefc-backup-check.timer
 ```
+
+Host keys pinned by `setup.sh`: main VPS `SHA256:jLsSjNMA5qqQgS+1mSXitjLn7t5dj7ay3/6oV4A0H00`, Storage Box `SHA256:XqONwb1S0zuj5A1CDxpOSuD2hnAArV1A3wKY7Z3sdgM`
+(Hetzner's published key). The laptop can still pull by hand to an external drive with
+`tools/backup_vps.sh staging` (admin key, `PRICEFC_BACKUP_DIR` defaults to
+`/Volumes/External/Backups/pricefc`; it refuses to run if the drive is not mounted).
+
+Restore (one environment, after stopping its pod: `systemctl --user stop pricefc-pod.service`
+as the environment user). The backup VPS's key is read-only, so restores go through the
+laptop's admin key:
+
+```bash
+rsync -a pricefc-backup:backups/staging/latest/ /tmp/restore-staging/
+rsync -a /tmp/restore-staging/ pricefc-vps-staging:pricefc/
+```
+
+From the Storage Box (backup VPS lost; any machine with restic and the restic password):
+
+```bash
+restic -r sftp:u685924-sub1@u685924-sub1.your-storagebox.de:restic snapshots --tag staging
+restic -r ... restore latest --tag staging --target /tmp/restore   # files under .../staging/.offsite/
+```
+
+Then remove stale WAL files and start the pod:
+`rm -f pricefc/mlflow/mlflow.db-wal pricefc/prefect/prefect.db-wal pricefc/prefect/prefect.db-shm && systemctl --user start pricefc-pod.service`.

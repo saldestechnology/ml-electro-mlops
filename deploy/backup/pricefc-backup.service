@@ -1,0 +1,8 @@
+[Unit]
+Description=pricefc: pull backups from the main VPS and copy them to the Storage Box
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/lib/pricefc-backup/run.sh backup
+Nice=10
+IOSchedulingClass=idle
