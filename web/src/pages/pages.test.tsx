@@ -1,5 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { fixtureFetch } from '../fixtures';
+import { useSelection } from '../store/selection';
 import { emptyFetch, pinToday, renderApp } from '../test/render';
 
 // Fixtures follow the clock: pin it to Sat 24 Oct 2026 so tomorrow is the 25-hour DST day.
@@ -92,6 +94,64 @@ describe('forecast page', () => {
     await userEvent.selectOptions(picker, '2026-10-20');
     expect(await screen.findByText('Wednesday 21 October 2026')).toBeInTheDocument();
     expect(screen.getByText(/Viewing an earlier origin/)).toBeInTheDocument();
+  });
+
+  it('keeps the chosen origin when switching zone, in the picker and the request', async () => {
+    const seen: string[] = [];
+    renderApp('/?zone=SE1', (url) => {
+      seen.push(url);
+      return fixtureFetch(url);
+    });
+    const picker = await screen.findByLabelText(/Origin \(forecast made on\)/);
+    await userEvent.selectOptions(picker, '2026-10-20');
+    await screen.findByText('Wednesday 21 October 2026');
+    expect(useSelection.getState()).toMatchObject({ zone: 'SE1', origin: '2026-10-20' });
+
+    const se2 = screen.getAllByRole('link', { name: 'SE2' })[0] as HTMLElement;
+    expect(se2).toHaveAttribute('href', '/?zone=SE2&origin=2026-10-20');
+    await userEvent.click(se2);
+    await waitFor(() => {
+      expect(seen.some((u) => u.includes('/zones/SE2/forecast?origin=2026-10-20'))).toBe(true);
+    });
+    expect(await screen.findByLabelText(/Origin \(forecast made on\)/)).toHaveValue('2026-10-20');
+    expect(screen.getByText('Wednesday 21 October 2026')).toBeInTheDocument();
+    // the map links carry the day too
+    const map = screen.getByRole('group', { name: 'Bidding zones of Sweden' });
+    expect(within(map).getByRole('link', { name: /^SE1/ })).toHaveAttribute(
+      'href',
+      '/?zone=SE1&origin=2026-10-20',
+    );
+  });
+
+  it('shows the latest where the chosen day is missing, and restores the day on return', async () => {
+    renderApp('/?zone=SE1');
+    await userEvent.selectOptions(
+      await screen.findByLabelText(/Origin \(forecast made on\)/),
+      '2026-10-16',
+    );
+    await screen.findByText('Saturday 17 October 2026');
+
+    // SE2 missed the origins 15-17 Oct
+    await userEvent.click(screen.getAllByRole('link', { name: 'SE2' })[0] as HTMLElement);
+    const note = await screen.findByText(/not available for SE2; showing the latest/);
+    expect(note.closest('[role="status"]')).toHaveClass('past');
+    expect(note).toHaveTextContent(/Fri 16 Oct/);
+    expect(await screen.findByLabelText(/Origin \(forecast made on\)/)).toHaveValue('2026-10-24');
+    expect(screen.getByText('Sunday 25 October 2026')).toBeInTheDocument();
+    expect(useSelection.getState().origin).toBe('2026-10-16');
+
+    await userEvent.click(screen.getAllByRole('link', { name: 'SE1' })[0] as HTMLElement);
+    expect(await screen.findByText('Saturday 17 October 2026')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Origin \(forecast made on\)/)).toHaveValue('2026-10-16');
+    expect(screen.queryByText(/not available for/)).toBeNull();
+  });
+
+  it('forgets the day when the latest is chosen', async () => {
+    renderApp('/?zone=SE1&origin=2026-10-20');
+    await userEvent.click(await screen.findByRole('link', { name: /Back to the latest/ }));
+    await screen.findByText('Sunday 25 October 2026');
+    expect(useSelection.getState().origin).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'SE2' })[0]).toHaveAttribute('href', '/?zone=SE2');
   });
 
   it('shows a designed empty state when a zone has no forecasts', async () => {

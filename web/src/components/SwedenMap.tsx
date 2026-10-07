@@ -3,6 +3,7 @@ import type { FocusEvent } from 'react';
 import { Link } from 'react-router';
 import type { Zone } from '../api';
 import { MAP_HEIGHT, MAP_WIDTH, ZONE_SHAPES } from '../assets/map/sweden';
+import { forecastPath, useSelection } from '../store/selection';
 import './SwedenMap.css';
 
 /** Svenska kraftnät's names for the bidding zones. */
@@ -40,6 +41,7 @@ export function SwedenMap({
   stale?: Partial<Record<Zone, boolean>>;
 }) {
   const id = useId();
+  const origin = useSelection((s) => s.origin);
   const [focused, setFocused] = useState<Zone | null>(null);
   const focusedShape = ZONE_SHAPES.find((s) => s.zone === focused);
   const onFocus = (z: Zone) => (e: FocusEvent) => {
@@ -66,7 +68,7 @@ export function SwedenMap({
           return (
             <Link
               key={z}
-              to={`/?zone=${z}`}
+              to={forecastPath(z, origin)}
               className="smap__zone"
               aria-label={zoneLinkLabel(z, selected, isStale)}
               aria-current={selected ? 'true' : undefined}

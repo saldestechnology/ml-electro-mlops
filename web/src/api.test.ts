@@ -103,6 +103,37 @@ describe('contract parsers', () => {
     expect(() => parseZones([{ ...ZONES_BODY[0], zone: 'NO1' }])).toThrow(/SE1..SE4/);
   });
 
+  it('names the failing path for a missing field', () => {
+    const { model, ...rest } = FORECAST_BODY;
+    expect(model).toBeDefined();
+    expect(() => parseForecast(rest)).toThrow(
+      'contract mismatch at forecast.model: expected string',
+    );
+    const { q50, ...noQ50 } = hour(1);
+    expect(q50).toBeDefined();
+    expect(() => parseForecast({ ...FORECAST_BODY, hours: [hour(0), noQ50] })).toThrow(
+      /forecast\.hours\[1\]\.q50: expected number/,
+    );
+  });
+
+  it('names the failing path for a wrong type', () => {
+    expect(() => parseZones([{ ...ZONES_BODY[0] }, { ...ZONES_BODY[1], stale: 'no' }])).toThrow(
+      /zones\[1\]\.stale: expected boolean, got "no"/,
+    );
+    expect(() => parseZones({})).toThrow(/zones: expected array/);
+  });
+
+  it('rejects non-finite numbers', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => parseForecast({ ...FORECAST_BODY, hours: [hour(0, { q05: bad })] })).toThrow(
+        ContractError,
+      );
+    }
+    expect(() => parseForecast({ ...FORECAST_BODY, quantiles: [Infinity] })).toThrow(
+      /forecast\.quantiles\[0\]/,
+    );
+  });
+
   it('parses performance with and without live scores', () => {
     const base = {
       zone: 'SE4',
