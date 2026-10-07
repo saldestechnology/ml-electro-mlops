@@ -284,7 +284,9 @@ rsync -a pricefc-backup:backups/staging/latest/ /tmp/restore-staging/
 rsync -a /tmp/restore-staging/ pricefc-vps-staging:pricefc/
 ```
 
-From the Storage Box (backup VPS lost; any machine with restic and the restic password):
+From the Storage Box (backup VPS lost). The sub-account has external reachability off, so this
+works only from a Hetzner server (a fresh cloud server is fine) with restic, the sub-account's
+key or password, and the restic password:
 
 ```bash
 restic -r sftp:u685924-sub1@u685924-sub1.your-storagebox.de:restic snapshots --tag staging

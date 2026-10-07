@@ -12,9 +12,11 @@
 set -euo pipefail
 
 CONF=${PRICEFC_BACKUP_CONF:-$HOME/.config/pricefc-backup}
+# Exported: backup_vps.sh and restic read these from the environment.
+set -a
 # shellcheck source=/dev/null
 . "$CONF/backup.env"
-export RESTIC_REPOSITORY RESTIC_PASSWORD_FILE
+set +a
 MODE=${1:-backup}
 STATE=${PRICEFC_BACKUP_STATE:-$HOME/.local/state/pricefc-backup}
 mkdir -p "$STATE"
