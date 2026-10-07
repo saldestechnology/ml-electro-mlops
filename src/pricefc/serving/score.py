@@ -258,7 +258,7 @@ def _daily_score(
     )
 
 
-def _score_path(base: BaseConfig, zone: str, role: str) -> Path:
+def _forecast_dir(base: BaseConfig, zone: str, role: str) -> Path:
     from pricefc.serving.live import forecast_path
 
     return forecast_path(base, zone, date(2000, 1, 1), role).parent
@@ -331,7 +331,7 @@ def score_forecasts(
         if actuals is None:
             continue
         for role in roles:
-            root = _score_path(base, zone, role)
+            root = _forecast_dir(base, zone, role)
             if not root.is_dir():
                 continue
             candidates: list[tuple[date, Path]] = []
