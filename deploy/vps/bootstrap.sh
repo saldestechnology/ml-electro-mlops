@@ -8,7 +8,8 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 ENV=$1 USER_NAME=$2 MLFLOW_PORT=$3 PREFECT_PORT=$4 CRON_MORNING=$5 CRON_AFTERNOON=$6
 CI_KEY=$(cat "$7") ADMIN_KEY=$(cat "$8") WEB_PORT=$9
-BACKUP_KEY=$([[ -n "${10:-}" ]] && cat "${10}" || true) BACKUP_IP=${11:-}
+BACKUP_KEY="" BACKUP_IP=${11:-}
+if [[ -n "${10:-}" ]]; then BACKUP_KEY=$(cat "${10}"); fi
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 id "$USER_NAME" >/dev/null 2>&1 || adduser --disabled-password --gecos "" "$USER_NAME"
