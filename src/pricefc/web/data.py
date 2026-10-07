@@ -3,36 +3,24 @@
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
 import structlog
 
-from pricefc.backtest import run as bt_run
-from pricefc.backtest.metrics import pinball, qcol
+from pricefc.backtest.metrics import qcol
 from pricefc.config import BaseConfig
+from pricefc.serving import score as scoring
 
 log = structlog.get_logger(__name__)
 
 ZONES = ("SE1", "SE2", "SE3", "SE4")
 MODEL_NAME = "ensemble_hourly_exp"
 LOCAL_TZ = ZoneInfo("Europe/Stockholm")
-
-
-@dataclass(frozen=True)
-class _ActualIndex:
-    by_utc_ns: dict[int, float]
-    by_local_hour: dict[tuple[date, int], list[tuple[int, float]]]
-
-
-# Include the root so separate configs with the same immutable version name cannot collide.
-_ACTUALS_CACHE: dict[tuple[str, str, str], _ActualIndex] = {}
 
 
 @dataclass(frozen=True)
@@ -72,73 +60,19 @@ def _read_state_metadata(base: BaseConfig, zone: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _actual_index(base: BaseConfig, zone: str) -> _ActualIndex | None:
-    """Read and index actuals once for each zone and true-lead dataset version."""
-    try:
-        dataset = bt_run.latest_dataset(base, zone, "true_lead")
-    except FileNotFoundError:
-        return None
-
-    cache_key = (str(base.paths.data_root.resolve()), zone, dataset.version)
-    cached = _ACTUALS_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    try:
-        frame = dataset.read()
-    except FileNotFoundError:
-        return None
-    if "target_time" not in frame or "y" not in frame:
-        log.warning("actuals_missing_columns", zone=zone, version=dataset.version)
-        return None
-
-    target_times = pd.to_datetime(frame["target_time"], utc=True, errors="coerce")
-    actuals = pd.to_numeric(frame["y"], errors="coerce")
-    by_utc_ns: dict[int, float] = {}
-    by_local_hour: dict[tuple[date, int], list[tuple[int, float]]] = {}
-    for stamp, actual in zip(target_times, actuals, strict=False):
-        if pd.isna(stamp) or pd.isna(actual) or not math.isfinite(float(actual)):
-            continue
-        local = pd.Timestamp(stamp).tz_convert(LOCAL_TZ)
-        number = float(actual)
-        by_utc_ns[pd.Timestamp(stamp).value] = number
-        utc_offset = local.utcoffset()
-        offset = int(utc_offset.total_seconds()) if utc_offset is not None else 0
-        by_local_hour.setdefault((local.date(), local.hour), []).append((offset, number))
-
-    indexed = _ActualIndex(by_utc_ns, by_local_hour)
-    _ACTUALS_CACHE[cache_key] = indexed
-    return indexed
-
-
-def _timestamp_utc(value: Any) -> pd.Timestamp:
-    stamp = pd.Timestamp(value)
-    if stamp.tzinfo is None:
-        stamp = stamp.tz_localize("UTC")
-    return stamp.tz_convert("UTC")
+_ActualIndex = scoring.ActualIndex
+_actual_index = scoring.load_actuals
+_enrich = scoring.enrich
+_naive_value = scoring.naive_value
+_pinball_mean = scoring.pinball_mean
+_score = scoring.score
+_timestamp_utc = scoring.timestamp_utc
 
 
 def _timestamp_local_iso(value: Any) -> str | None:
     if value is None or pd.isna(value):
         return None
     return _timestamp_utc(value).tz_convert(LOCAL_TZ).isoformat()
-
-
-def _naive_value(stamp: pd.Timestamp, actuals: _ActualIndex | None) -> float | None:
-    """Look up the actual for the same Stockholm wall-clock hour one week earlier."""
-    if actuals is None:
-        return None
-    local = stamp.tz_convert(LOCAL_TZ)
-    key = (local.date() - timedelta(days=7), local.hour)
-    candidates = actuals.by_local_hour.get(key, [])
-    if not candidates:
-        return None
-    utc_offset = local.utcoffset()
-    offset = int(utc_offset.total_seconds()) if utc_offset is not None else 0
-    return next(
-        (value for candidate_offset, value in candidates if candidate_offset == offset),
-        candidates[0][1],
-    )
 
 
 def _number(row: pd.Series, column: str) -> float | None:
@@ -257,75 +191,6 @@ def _number_or_string(value: Any) -> str | None:
     if value is None or pd.isna(value):
         return None
     return str(value)
-
-
-def _enrich(frame: pd.DataFrame, actuals: _ActualIndex | None) -> pd.DataFrame:
-    """Attach actual and 7-day local-hour actual columns to forecast rows."""
-    out = frame.copy()
-    actual_values: list[float | None] = []
-    naive_values: list[float | None] = []
-    for value in out["target_time"]:
-        stamp = _timestamp_utc(value)
-        actual_values.append(actuals.by_utc_ns.get(stamp.value) if actuals is not None else None)
-        naive_values.append(_naive_value(stamp, actuals))
-    out["actual"] = actual_values
-    out["naive_7d"] = naive_values
-    return out
-
-
-def _pinball_mean(
-    frame: pd.DataFrame, quantiles: list[float], mask: pd.Series, prediction: str | None = None
-) -> float | None:
-    """Average the project's elementwise pinball loss across scored hours and quantiles."""
-    if not mask.any():
-        return None
-    y = frame.loc[mask, "actual"].to_numpy(dtype="float64")
-    losses: list[np.ndarray] = []
-    for tau in quantiles:
-        pred = (
-            frame.loc[mask, prediction].to_numpy(dtype="float64")
-            if prediction is not None
-            else frame.loc[mask, qcol(tau)].to_numpy(dtype="float64")
-        )
-        losses.append(pinball(y, pred, tau))
-    return float(np.concatenate(losses).mean())
-
-
-def _score(frame: pd.DataFrame, quantiles: list[float]) -> dict[str, float | None] | None:
-    """Score actual hours. The naive loss, and the skill, use only hours that have both an
-    actual and a naive value, so model and naive are compared on the same hours."""
-    quantile_cols = [qcol(tau) for tau in quantiles]
-    actual = frame["actual"].notna()
-    forecast_mask = actual & frame[quantile_cols].notna().all(axis=1)
-    if not forecast_mask.any():
-        return None
-    naive_mask = forecast_mask & frame["naive_7d"].notna()
-    y = frame.loc[forecast_mask, "actual"].to_numpy(dtype="float64")
-    q50 = frame.loc[forecast_mask, qcol(0.5)].to_numpy(dtype="float64")
-    coverage_50 = np.mean(
-        (y >= frame.loc[forecast_mask, qcol(0.25)].to_numpy(dtype="float64"))
-        & (y <= frame.loc[forecast_mask, qcol(0.75)].to_numpy(dtype="float64"))
-    )
-    coverage_90 = np.mean(
-        (y >= frame.loc[forecast_mask, qcol(0.05)].to_numpy(dtype="float64"))
-        & (y <= frame.loc[forecast_mask, qcol(0.95)].to_numpy(dtype="float64"))
-    )
-    live_pinball = _pinball_mean(frame, quantiles, forecast_mask)
-    naive_pinball = _pinball_mean(frame, quantiles, naive_mask, "naive_7d")
-    paired_pinball = _pinball_mean(frame, quantiles, naive_mask)
-    skill = (
-        1.0 - paired_pinball / naive_pinball
-        if paired_pinball is not None and naive_pinball not in (None, 0.0)
-        else None
-    )
-    return {
-        "pinball": live_pinball,
-        "naive_7d_pinball": naive_pinball,
-        "skill": skill,
-        "coverage_50": float(coverage_50),
-        "coverage_90": float(coverage_90),
-        "mae_median": float(np.mean(np.abs(q50 - y))),
-    }
 
 
 def performance_data(

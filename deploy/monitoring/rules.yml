@@ -1,0 +1,152 @@
+# Alert rules (test: promtool check rules rules.yml; promtool test rules rules_test.yml).
+# severity: critical = something is not being produced or protected; warning = look at it.
+groups:
+  - name: pricefc-forecast
+    rules:
+      - alert: ForecastMissing
+        # target_date is 00:00 local of the newest forecast's delivery day; once it is today
+        # and it's past 09:45 local, tomorrow's forecast is missing (DST-safe).
+        expr: time() - pricefc_forecast_target_date_timestamp_seconds{role="champion"} > 9*3600 + 45*60
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }} {{ $labels.zone }}: no champion forecast for tomorrow"
+          description: "Newest champion forecast is for today; forecast-daily (09:05) has not delivered."
+      - alert: ChallengerForecastMissing
+        expr: time() - pricefc_forecast_target_date_timestamp_seconds{role="challenger"} > 10*3600 + 30*60
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.env }} {{ $labels.zone }}: no challenger forecast for tomorrow"
+      - alert: ForecastIncomplete
+        expr: pricefc_forecast_rows < 23
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }} {{ $labels.zone }} {{ $labels.role }}: forecast has {{ $value }} rows"
+      - alert: ModelDrift
+        # 14-day pinball more than 30 % above the backtest level, once a week of days is scored.
+        expr: |
+          (pricefc_pinball_mean{window="14d"} > on(env, zone) group_left 1.3 * pricefc_backtest_pinball)
+          and on(env, zone, role) pricefc_scored_days{window="14d"} >= 7
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.env }} {{ $labels.zone }} {{ $labels.role }}: 14-day pinball {{ $value | printf \"%.2f\" }} is >30% above backtest"
+      - alert: ScoreMissing
+        expr: time() - pricefc_score_last_origin_timestamp_seconds{role="champion"} > 43*3600
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.zone }}: champion forecast scoring is stale"
+          description: "score-daily runs at 14:00 and 17:00 to allow for late day-ahead publication."
+
+  - name: pricefc-pipeline
+    rules:
+      - alert: SchedulerNotScheduling
+        # 2026-10-07: Prefect created no scheduled runs at all and nothing failed loudly.
+        expr: sum by (env) (pricefc_flow_runs_scheduled) == 0
+        for: 30m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }}: Prefect has no scheduled runs in the next 48 h"
+      - alert: IngestStale
+        expr: time() - pricefc_flow_last_success_timestamp_seconds{flow="ingest-daily"} > 20*3600
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }}: ingest-daily has not succeeded for {{ $value | humanizeDuration }}"
+      - alert: RawDataStale
+        expr: time() - pricefc_raw_latest_valid_pulled_at_timestamp_seconds > 30*3600
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.env }}: {{ $labels.source }}/{{ $labels.dataset }} {{ $labels.key }} last valid pull {{ $value | humanizeDuration }} ago"
+      - alert: RawPullInvalid
+        expr: pricefc_raw_latest_pull_valid == 0
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.env }}: newest pull of {{ $labels.source }}/{{ $labels.dataset }} {{ $labels.key }} failed validation"
+      - alert: PrefectDown
+        expr: pricefc_prefect_up == 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }}: Prefect API unreachable from the web container"
+      - alert: MlflowDown
+        expr: pricefc_mlflow_up == 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }}: MLflow unreachable from the web container"
+      - alert: MetricsSectionFailing
+        expr: pricefc_metrics_errors > 0
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.env }}: /metrics section {{ $labels.section }} is failing"
+
+  - name: hosts
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.host }} {{ $labels.job }} ({{ $labels.instance }}) unreachable"
+          description: "For the main VPS this also means the SSH tunnel from the backup VPS is down."
+      - alert: ContainerNotRunning
+        expr: pricefc_container_running == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }}: container {{ $labels.name }} is not running"
+      - alert: ContainerUnhealthy
+        expr: pricefc_container_healthy == 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.env }}: container {{ $labels.name }} is unhealthy"
+      - alert: DiskFilling
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value | humanizePercentage }} of / free"
+      - alert: MemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value | humanizePercentage }} memory available"
+
+  - name: backups
+    rules:
+      - alert: BackupStale
+        expr: time() - pricefc_backup_last_success_timestamp_seconds{mode="backup"} > 36*3600
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "no successful backup for {{ $value | humanizeDuration }}"
+      - alert: BackupCheckStale
+        expr: time() - pricefc_backup_last_success_timestamp_seconds{mode="check"} > 8*86400
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "no successful restore check for {{ $value | humanizeDuration }}"
+      - alert: BackupMetricsMissing
+        expr: absent(pricefc_backup_last_success_timestamp_seconds{mode="backup"})
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "backup timestamps are not being exported"
+
+  - name: watchdog
+    rules:
+      - alert: Watchdog
+        # Always firing; Alertmanager sends it nowhere. Lets us check the alert pipeline is alive.
+        expr: vector(1)
+        labels: {severity: none}
+        annotations:
+          summary: "alerting pipeline is alive"

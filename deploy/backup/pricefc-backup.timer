@@ -1,0 +1,10 @@
+[Unit]
+Description=pricefc nightly backup (after the night's quiet hours, before the 08:15 ingest)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Europe/Stockholm
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

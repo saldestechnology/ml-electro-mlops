@@ -1,0 +1,9 @@
+[Unit]
+Description=pricefc weekly backup check
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00 Europe/Stockholm
+Persistent=true
+
+[Install]
+WantedBy=timers.target

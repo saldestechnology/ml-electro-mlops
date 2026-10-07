@@ -14,12 +14,20 @@ from pricefc.flows import daily
 def test_deployments_are_scheduled_in_stockholm_time(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PRICEFC_CRON_MORNING", "0 8 * * *")
     monkeypatch.delenv("PRICEFC_CRON_FORECAST", raising=False)
+    monkeypatch.delenv("PRICEFC_CRON_SCORE", raising=False)
     deps = daily.deployments("staging")
-    assert [d.name for d in deps] == ["staging-morning", "staging-afternoon", "staging-forecast"]
+    assert [d.name for d in deps] == [
+        "staging-morning",
+        "staging-afternoon",
+        "staging-forecast",
+        "staging-score",
+    ]
     crons = [d.schedules[0].schedule for d in deps]
     assert crons[0].cron == "0 8 * * *" and crons[1].cron == "30 13 * * *"
     assert crons[2].cron == "5 9 * * *"
+    assert crons[3].cron == "0 14,17 * * *"
     assert deps[2].flow_name == "forecast-daily"
+    assert deps[3].flow_name == "score-daily"
     assert all(c.timezone == "Europe/Stockholm" for c in crons)
     assert all(d.tags == ["staging"] for d in deps)
 
@@ -121,6 +129,41 @@ def test_forecast_flow_runs_every_zone_and_fails_at_the_end(
     assert out["silver"] == {"error": "build failed"}
 
 
+def test_score_flow_reports_ingest_failure_and_still_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fail_ingest() -> dict[str, Any]:
+        calls.append("ingest")
+        raise OSError("price API unavailable")
+
+    monkeypatch.setattr(daily, "ingest_prices_task", fail_ingest)
+    monkeypatch.setattr(
+        daily, "score_forecasts_task", lambda: calls.append("score") or [{"origin_date": "D"}]
+    )
+    out = daily.score_daily.fn()
+    assert calls == ["ingest", "score"]
+    assert out["ingest"] == {"error": "OSError: price API unavailable"}
+    assert out["scored"] == 1
+
+
+def test_score_flow_reports_invalid_ingest_and_scoring_errors_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(daily, "ingest_prices_task", lambda: {"snapshots": 1, "failed": 1})
+    monkeypatch.setattr(daily, "score_forecasts_task", lambda: [])
+    out = daily.score_daily.fn()
+    assert out["ingest"]["warning"] == "1 invalid price snapshot(s)"
+    assert out["scored"] == 0
+
+    monkeypatch.setattr(
+        daily, "score_forecasts_task", lambda: (_ for _ in ()).throw(ValueError("score broke"))
+    )
+    with pytest.raises(ValueError, match="score broke"):
+        daily.score_daily.fn()
+
+
 def test_failure_hook_alerts_with_a_short_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     from pricefc import alerts
 
@@ -128,6 +171,8 @@ def test_failure_hook_alerts_with_a_short_summary(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(alerts, "send_telegram", lambda text: sent.append(text) or True)
     assert daily.forecast_daily.on_failure_hooks == [daily._alert]
     assert daily.ingest_daily.on_crashed_hooks == [daily._alert]
+    assert daily.score_daily.on_failure_hooks == [daily._alert]
+    assert daily.score_daily.on_crashed_hooks == [daily._alert]
     state = SimpleNamespace(
         name="Failed", message="Traceback...\nFlow run encountered an exception: RuntimeError: x"
     )

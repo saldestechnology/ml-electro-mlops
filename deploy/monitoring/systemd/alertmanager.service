@@ -1,0 +1,11 @@
+[Unit]
+Description=Alertmanager (pricefc monitoring)
+
+[Service]
+ExecStart=%h/.local/opt/alertmanager/alertmanager --config.file=%h/.config/pricefc-monitoring/alertmanager.yml --storage.path=%h/monitoring/alertmanager --web.listen-address=127.0.0.1:9093 --cluster.listen-address=
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,498 @@
+{
+ "uid": "pricefc-quality",
+ "title": "pricefc · Forecast quality",
+ "tags": [
+  "pricefc"
+ ],
+ "timezone": "Europe/Stockholm",
+ "schemaVersion": 41,
+ "editable": false,
+ "refresh": "1m",
+ "time": {
+  "from": "now-30d",
+  "to": "now"
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "env",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "query": {
+     "query": "label_values(pricefc_build_info, env)",
+     "refId": "env"
+    },
+    "refresh": 2,
+    "current": {
+     "text": "staging",
+     "value": "staging"
+    }
+   },
+   {
+    "name": "zone",
+    "type": "custom",
+    "query": "SE1,SE2,SE3,SE4",
+    "multi": true,
+    "includeAll": true,
+    "current": {
+     "text": "All",
+     "value": "$__all"
+    },
+    "options": []
+   },
+   {
+    "name": "window",
+    "type": "custom",
+    "query": "14d,7d",
+    "current": {
+     "text": "14d",
+     "value": "14d"
+    },
+    "options": []
+   }
+  ]
+ },
+ "panels": [
+  {
+   "type": "row",
+   "title": "Champion vs challenger (rolling $window)",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [],
+   "id": 1
+  },
+  {
+   "type": "bargauge",
+   "title": "Pinball: challenger vs champion",
+   "description": "Negative = challenger better. The backtest said −7 % to −15 %.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 8,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_pinball_mean{env=\"$env\", zone=~\"$zone\", role=\"challenger\", window=\"$window\"} / on(env, zone) pricefc_pinball_mean{env=\"$env\", zone=~\"$zone\", role=\"champion\", window=\"$window\"} - 1",
+     "legendFormat": "{{zone}}",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 0,
+        "color": "red"
+       }
+      ]
+     },
+     "min": -0.5,
+     "max": 0.5
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "basic"
+   },
+   "id": 2
+  },
+  {
+   "type": "table",
+   "title": "Scores",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 1,
+    "w": 16,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_pinball_mean{env=\"$env\", zone=~\"$zone\", window=\"$window\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "1 - pricefc_pinball_mean{env=\"$env\", zone=~\"$zone\", window=\"$window\"} / pricefc_naive_pinball_mean{env=\"$env\", zone=~\"$zone\", window=\"$window\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "B",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_coverage_ratio{env=\"$env\", zone=~\"$zone\", window=\"$window\", band=\"90\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "C",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_scored_days{env=\"$env\", zone=~\"$zone\", window=\"$window\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "D",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "skill vs naive"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "90% coverage"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "value": null,
+           "color": "red"
+          },
+          {
+           "value": 0.8,
+           "color": "orange"
+          },
+          {
+           "value": 0.85,
+           "color": "green"
+          },
+          {
+           "value": 0.95,
+           "color": "orange"
+          }
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "pinball"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 2
+       }
+      ]
+     }
+    ]
+   },
+   "options": {},
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "env": true,
+       "host": true,
+       "instance": true,
+       "job": true,
+       "window": true,
+       "band": true
+      },
+      "renameByName": {
+       "Value #A": "pinball",
+       "Value #B": "skill vs naive",
+       "Value #C": "90% coverage",
+       "Value #D": "days"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "zone"
+       }
+      ]
+     }
+    }
+   ],
+   "id": 3
+  },
+  {
+   "type": "row",
+   "title": "Over time",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [],
+   "id": 4
+  },
+  {
+   "type": "timeseries",
+   "title": "Rolling pinball (EUR/MWh) vs backtest",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 9,
+    "w": 12,
+    "h": 9
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_pinball_mean{env=\"$env\", zone=~\"$zone\", window=\"$window\"}",
+     "legendFormat": "{{zone}} {{role}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_backtest_pinball{env=\"$env\", zone=~\"$zone\"}",
+     "legendFormat": "{{zone}} backtest",
+     "instant": false,
+     "range": true,
+     "refId": "B"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*backtest"
+      },
+      "properties": [
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    },
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "id": 5
+  },
+  {
+   "type": "timeseries",
+   "title": "90% band coverage",
+   "description": "Share of hours whose actual price fell inside q05–q95. Target 0.90.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 9,
+    "w": 12,
+    "h": 9
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_coverage_ratio{env=\"$env\", zone=~\"$zone\", window=\"$window\", band=\"90\"}",
+     "legendFormat": "{{zone}} {{role}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0.5,
+     "max": 1,
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "line+area"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "transparent"
+       },
+       {
+        "value": 0.85,
+        "color": "green"
+       },
+       {
+        "value": 0.95,
+        "color": "transparent"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 6
+  },
+  {
+   "type": "timeseries",
+   "title": "Skill vs naive (7-day-ago price)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 18,
+    "w": 24,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "1 - pricefc_pinball_mean{env=\"$env\", zone=~\"$zone\", window=\"$window\"} / pricefc_naive_pinball_mean{env=\"$env\", zone=~\"$zone\", window=\"$window\"}",
+     "legendFormat": "{{zone}} {{role}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit"
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 7
+  }
+ ]
+}

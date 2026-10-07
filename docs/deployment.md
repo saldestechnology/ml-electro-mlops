@@ -21,6 +21,7 @@ publish release vX.Y.Z ──► production: same image digest, after approval (
   | Prefect UI (loopback) | 127.0.0.1:4200 | 127.0.0.1:4300 |
   | ingest schedule (Stockholm) | 08:15, 13:35 | 08:00, 13:20 |
   | forecast schedule (Stockholm) | 09:05 | 09:05 |
+  | score schedule (Stockholm) | 14:00, 17:00 | 14:00, 17:00 |
   | data | `~pricefc/pricefc/` | `~pricefc-staging/pricefc/` |
 
 - **Deploy**: GitHub Actions SSHes in with an environment-specific key that is bound to
@@ -41,6 +42,36 @@ Release to production: create a GitHub release with a `v*` tag on a commit that 
 staging, then approve the `production` deployment in the Actions run.
 
 ## Web dashboard
+
+### Metrics
+
+The same web app serves Prometheus 0.0.4 text at /metrics, cached for about 60 seconds. Keep the
+endpoint private and scrape it from the backup VPS through an SSH tunnel.
+
+Forecast and model gauges: pricefc_build_info,
+pricefc_forecast_last_origin_timestamp_seconds,
+pricefc_forecast_target_date_timestamp_seconds, pricefc_forecast_made_at_timestamp_seconds,
+pricefc_forecast_rows, pricefc_model_version,
+pricefc_state_last_origin_timestamp_seconds, and pricefc_backtest_pinball.
+
+Quality gauges: pricefc_pinball_mean, pricefc_naive_pinball_mean, pricefc_coverage_ratio, and
+pricefc_scored_days, labelled by zone, role, and 7-day or 14-day window (coverage also has
+band="90").
+
+Freshness and service gauges: pricefc_raw_latest_valid_pulled_at_timestamp_seconds,
+pricefc_raw_latest_pull_valid, pricefc_prefect_up,
+pricefc_flow_last_success_timestamp_seconds, pricefc_flow_last_run_timestamp_seconds,
+pricefc_flow_last_run_state, pricefc_flow_last_success_duration_seconds,
+pricefc_flow_runs_scheduled, pricefc_score_last_origin_timestamp_seconds, and
+pricefc_mlflow_up. The score timestamp is local midnight of the newest scored origin, labelled
+by zone and role. Prefect configuration uses
+PRICEFC_PREFECT_API_URL (default http://localhost:4200/api) and MLflow uses PRICEFC_MLFLOW_URL
+(default http://localhost:5000). The scheduled-run gauge counts the next 48 hours; zero is a
+useful alert because it can indicate a broken Prefect scheduler.
+
+pricefc_metrics_render_seconds reports uncached render time and
+pricefc_metrics_errors{section} reports section failures. A down Prefect or MLflow service does
+not prevent the other metric sections from rendering.
 
 Install the optional `web` extra and run `pricefc web` locally; the API listens on
 `127.0.0.1:8000`. To open a private pod's dashboard from your laptop, forward its loopback port
@@ -166,6 +197,15 @@ Moving the `champion` alias to another registered version is picked up by the ne
 then caught up from that version's last origin); to go back to the previous champion, move the
 alias back.
 
+## Afternoon scoring (`score-daily`)
+
+The `score-daily` deployment runs at 14:00 and 17:00 Europe/Stockholm by default
+(`PRICEFC_CRON_SCORE`). It attempts a price ingest, then scores recent forecasts only when every
+delivery hour has an actual and all quantiles are present. Results are upserted to
+`scores/<zone>/<role>.parquet` and logged individually to the MLflow `forecast-score` experiment.
+The later run catches delayed price publication; normally it finds no new origins. For a manual
+run, use `pricefc score --zone SE3` (add `--force` to rewrite existing origins).
+
 ## Secrets (HashiCorp Vault)
 
 Vault runs on the VPS as user `vault` (`deploy/vault/`, loopback 127.0.0.1:8200). Secrets live
@@ -221,25 +261,118 @@ The VPS is shared with other workloads. Do not reboot, run a full upgrade, or ch
 firewall settings without the owner. Disk is limited (~15 GB free): images share their
 dependency layer, and `deploy` prunes dangling images after a healthy deploy.
 
-## Backups (pulled to the owner's laptop)
+## Monitoring (Prometheus, Alertmanager, Grafana)
 
-`tools/backup_vps.sh [env ...]` pulls `~/pricefc/` of an environment (raw snapshots, datasets,
-live rows, forecasts, served states and their backups, MLflow database and artifacts, Prefect
-database) into `~/Backups/pricefc/<env>/<UTC timestamp>/`. The laptop connects to the VPS, never
-the reverse. Snapshots are hard-linked against the previous one (unchanged files cost nothing);
-SQLite databases are copied with SQLite's online backup API inside their containers and must
-pass `pragma integrity_check`. Kept: newest 14 plus one per ISO week for 8 weeks. Not included:
-`hf-cache` (re-downloadable) and Vault (raft snapshots need the owner's operator token).
+Runs on the backup VPS as the unprivileged user `pricefc-backup` (systemd user services, all on
+127.0.0.1), so it watches the main VPS from outside and keeps alerting when the main VPS is down.
 
-Scheduled daily at 03:30 by launchd (`tools/launchd/com.pricefc.backup.plist`; a missed slot runs
-on wake; log `~/Backups/pricefc/backup.log`). macOS denies launchd jobs access to `~/Documents`,
-so the job runs an installed copy: after changing the script, re-run
-`install -m 755 tools/backup_vps.sh ~/.local/libexec/pricefc-backup.sh`.
+```
+main VPS (staging)                                     backup VPS (pricefc-backup)
+ pricefc-web /metrics :8100 ──┐                         Prometheus :9090 (rules.yml) ── Alertmanager :9093 ── Telegram "FC Mon"
+ node_exporter :9100 ─────────┴── SSH tunnel ─────────▶ :18100 / :19100      │
+   + container-metrics timer      (pricefc-tunnel)                           └── Grafana :3000
+                                                         node_exporter :9100 (+ backup timestamps)
+```
 
-Restore (one environment, after stopping its pod: `systemctl --user stop pricefc-pod.service`
-as the environment user):
+- **Look:** `ssh -N -L 3000:127.0.0.1:3000 pricefc-backup`, then http://localhost:3000 (user
+  `admin`; password in `~/.config/pricefc-monitoring/grafana_admin_password` there; read it in
+  your own terminal). Dashboards: *pricefc · Operations* and *pricefc · Forecast quality*
+  (champion vs challenger, the promotion view). Prometheus itself:
+  `ssh -N -L 9090:127.0.0.1:9090 pricefc-backup`.
+- **Tunnel key** on the main VPS (`authorized_keys` of `pricefc-staging`): `restrict,
+  port-forwarding,permitopen="127.0.0.1:8100",permitopen="127.0.0.1:9100",
+  command="/usr/sbin/nologin",from="62.238.60.155"`: it can forward those two ports and nothing
+  else (no shell; MLflow, Prefect and Vault ports are refused).
+- **Main VPS:** node_exporter (127.0.0.1:9100, once per host, under `pricefc-staging`) and
+  `pricefc-container-metrics.timer` (each minute: running/healthy/restarts/memory per
+  `pricefc-*` container via node_exporter's textfile collector).
+- **Alerts** (`deploy/monitoring/rules.yml`, unit-tested with `promtool test rules
+  rules_test.yml`): ForecastMissing (no champion forecast for tomorrow by 09:50, DST-safe),
+  ChallengerForecastMissing, ForecastIncomplete, ModelDrift (14-day pinball >30 % above
+  backtest), SchedulerNotScheduling (no Prefect runs scheduled in 48 h: the 2026-10-07 incident),
+  IngestStale, RawDataStale, RawPullInvalid, PrefectDown, MlflowDown, MetricsSectionFailing,
+  TargetDown (incl. the tunnel), ContainerNotRunning/Unhealthy, DiskFilling, MemoryLow,
+  BackupStale (36 h), BackupCheckStale (8 d), BackupMetricsMissing. Critical alerts repeat every
+  4 h, warnings daily; a down tunnel inhibits the alerts behind it. `Watchdog` always fires and
+  goes nowhere (proves the pipeline evaluates).
+- **Telegram:** Alertmanager reads the bot token from
+  `~/.config/pricefc-monitoring/telegram_bot_token` (mode 600) at send time; chat "FC Mon" only.
+- **Install / change:** edit `deploy/monitoring/`, regenerate dashboards with
+  `python deploy/monitoring/grafana/build_dashboards.py`, copy the directory to the host and run
+  `setup-backup-vps.sh` (backup VPS) or `setup-main-vps.sh` (main VPS, as the env user). Versions
+  are pinned in `versions.env`; `install.sh` checks published SHA-256 sums.
+
+## Backups
+
+Three layers, each covering what the others cannot:
+
+| Layer | Where | What | Kept |
+|---|---|---|---|
+| Hetzner backups | Hetzner, same account | whole-disk image of the main VPS | 7 days |
+| Pull backups | backup VPS 62.238.60.155 (user `pricefc-backup`), `~/backups` | `~/pricefc/` of each environment, consistent SQLite copies | 7 days |
+| Off-site copy | Storage Box sub-account `u685924-sub1` (`ml-electro-mlops/`), restic, encrypted | the newest pull, deduplicated | 14 daily, 8 weekly, 12 monthly |
+
+The backup VPS connects to the main VPS, never the reverse: a compromised main VPS cannot
+reach or delete the backups. Its key (`~pricefc-backup/.ssh/pricefc_pull`) sits in each environment user's
+`authorized_keys` as `command="~/bin/backup-helper",restrict,from="62.238.60.155"`, so it can
+only take the SQLite snapshots, remove them again and run a read-only rsync confined to
+`~/pricefc` (`deploy/backup/backup-helper.sh`, `rrsync -ro`); no shell, no `~/.ssh`, no Vault
+credentials. Everything there runs as the unprivileged user `pricefc-backup` (systemd user timers, linger).
+`pricefc-backup.timer` runs `deploy/backup/run.sh backup` at 03:30 Stockholm time;
+`pricefc-backup-check.timer` runs `run.sh check` on Sundays at 05:00 (`restic check` of 10 % of
+the data and a restore of each environment's `mlflow.db` from the Storage Box, which must pass
+`integrity_check` and contain the champion aliases). Failures go to Telegram when
+`~/.config/pricefc-backup/telegram.env` exists; each success writes
+`~/.local/state/pricefc-backup/last-ok-{backup,check}` for the monitoring.
+
+Pulled: raw snapshots, silver lake, datasets, live rows, forecasts, served states and their
+backups, MLflow database and artifacts, Prefect database. Not pulled: `hf-cache`
+(re-downloadable) and Vault (raft snapshots need the owner's operator token).
+
+**The restic password** (`~/.config/pricefc-backup/restic.pass` on the backup VPS) is the only key to
+the Storage Box copy. The owner keeps a copy in their password manager; without it, the
+off-site copy is unreadable if the backup VPS is lost.
+
+The backup VPS is shared with the owner's own use: root cannot log in over SSH, passwords are
+off, and sshd's `AllowUsers` (in `00-ponder-hardening.conf`) lists `psy pricefc-backup`. Root
+(via the owner's sudo account) did only: install restic, rsync, sqlite3, curl; create
+`pricefc-backup` with linger; add it to `AllowUsers`.
+
+Setup (as `pricefc-backup`, from a copy of `deploy/backup/` plus `tools/backup_vps.sh`):
 
 ```bash
-rsync -a ~/Backups/pricefc/staging/latest/ pricefc-vps-staging:pricefc/
-ssh pricefc-vps-staging 'rm -f pricefc/mlflow/mlflow.db-wal pricefc/prefect/prefect.db-wal pricefc/prefect/prefect.db-shm && systemctl --user start pricefc-pod.service'
+./setup.sh u685924-sub1 u685924-sub1.your-storagebox.de staging   # prints the two public keys
+# Storage Box (owner, own terminal; the sub-account password is typed once):
+echo '<pricefc_storagebox.pub>' | ssh -p 23 u685924-sub1@u685924-sub1.your-storagebox.de install-ssh-key
+# Main VPS, per env user: install the helper and append the printed restricted line
+#   install -m 755 backup-helper.sh ~/bin/backup-helper   (bootstrap.sh does both on a re-run)
+set -a; . ~/.config/pricefc-backup/backup.env; set +a; restic init
+systemctl --user start pricefc-backup.service && journalctl --user -u pricefc-backup -n 20
+systemctl --user enable --now pricefc-backup.timer pricefc-backup-check.timer
 ```
+
+Host keys pinned by `setup.sh`: main VPS `SHA256:jLsSjNMA5qqQgS+1mSXitjLn7t5dj7ay3/6oV4A0H00`, Storage Box `SHA256:XqONwb1S0zuj5A1CDxpOSuD2hnAArV1A3wKY7Z3sdgM`
+(Hetzner's published key). The laptop can still pull by hand to an external drive with
+`tools/backup_vps.sh staging` (admin key, `PRICEFC_BACKUP_DIR` defaults to
+`/Volumes/External/Backups/pricefc`; it refuses to run if the drive is not mounted).
+
+Restore (one environment, after stopping its pod: `systemctl --user stop pricefc-pod.service`
+as the environment user). The backup VPS's key is read-only, so restores go through the
+laptop's admin key:
+
+```bash
+rsync -a pricefc-backup:backups/staging/latest/ /tmp/restore-staging/
+rsync -a /tmp/restore-staging/ pricefc-vps-staging:pricefc/
+```
+
+From the Storage Box (backup VPS lost). The sub-account has external reachability off, so this
+works only from a Hetzner server (a fresh cloud server is fine) with restic, the sub-account's
+key or password, and the restic password:
+
+```bash
+restic -r sftp:u685924-sub1@u685924-sub1.your-storagebox.de:restic snapshots --tag staging
+restic -r ... restore latest --tag staging --target /tmp/restore   # files under .../staging/.offsite/
+```
+
+Then remove stale WAL files and start the pod:
+`rm -f pricefc/mlflow/mlflow.db-wal pricefc/prefect/prefect.db-wal pricefc/prefect/prefect.db-shm && systemctl --user start pricefc-pod.service`.

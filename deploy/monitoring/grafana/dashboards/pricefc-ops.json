@@ -1,0 +1,963 @@
+{
+ "uid": "pricefc-ops",
+ "title": "pricefc · Operations",
+ "tags": [
+  "pricefc"
+ ],
+ "timezone": "Europe/Stockholm",
+ "schemaVersion": 41,
+ "editable": false,
+ "refresh": "1m",
+ "time": {
+  "from": "now-2d",
+  "to": "now"
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "env",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "query": {
+     "query": "label_values(pricefc_build_info, env)",
+     "refId": "env"
+    },
+    "refresh": 2,
+    "current": {
+     "text": "staging",
+     "value": "staging"
+    }
+   }
+  ]
+ },
+ "panels": [
+  {
+   "type": "row",
+   "title": "Now",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [],
+   "id": 1
+  },
+  {
+   "type": "stat",
+   "title": "Firing alerts",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 3,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count(ALERTS{alertstate=\"firing\", severity!=\"none\"}) or vector(0)",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 1,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none"
+   },
+   "id": 2
+  },
+  {
+   "type": "stat",
+   "title": "Champion forecast for",
+   "description": "Delivery day of the newest champion forecast per zone. After 09:30 this should be tomorrow.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 3,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_forecast_target_date_timestamp_seconds{env=\"$env\", role=\"champion\"} * 1000",
+     "legendFormat": "{{zone}}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "time:ddd D MMM"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "text": {
+     "titleSize": 14,
+     "valueSize": 26
+    }
+   },
+   "id": 3
+  },
+  {
+   "type": "stat",
+   "title": "Last scored forecast",
+   "description": "Origin date of the newest scored champion forecast per zone.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 9,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_score_last_origin_timestamp_seconds{env=\"$env\", role=\"champion\"} * 1000",
+     "legendFormat": "{{zone}}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "time:ddd D MMM"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "text": {
+     "titleSize": 14,
+     "valueSize": 26
+    }
+   },
+   "id": 4
+  },
+  {
+   "type": "stat",
+   "title": "Scheduled runs (next 48 h)",
+   "description": "0 means Prefect's scheduler is not creating runs (2026-10-07 incident).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 15,
+    "y": 1,
+    "w": 3,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(pricefc_flow_runs_scheduled{env=\"$env\"})",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "red"
+       },
+       {
+        "value": 1,
+        "color": "green"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none"
+   },
+   "id": 5
+  },
+  {
+   "type": "stat",
+   "title": "Last backup",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 1,
+    "w": 3,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "(time() - pricefc_backup_last_success_timestamp_seconds{mode=\"backup\"})",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 108000,
+        "color": "orange"
+       },
+       {
+        "value": 129600,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none"
+   },
+   "id": 6
+  },
+  {
+   "type": "stat",
+   "title": "Services",
+   "description": "1 if every scrape target (incl. the tunnel to the main VPS) is up.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 21,
+    "y": 1,
+    "w": 3,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "min(up)",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "red"
+       },
+       {
+        "value": 1,
+        "color": "green"
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "DOWN"
+        },
+        "1": {
+         "text": "UP"
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none"
+   },
+   "id": 7
+  },
+  {
+   "type": "table",
+   "title": "Alerts (firing and pending)",
+   "description": "Prometheus' alert state; Telegram (FC Mon) gets the firing ones via Alertmanager.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 5,
+    "w": 24,
+    "h": 5
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ALERTS{severity!=\"none\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "alertstate"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "firing": {
+            "color": "red"
+           },
+           "pending": {
+            "color": "orange"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "footer": {
+     "show": false
+    }
+   },
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "Value": true
+      },
+      "indexByName": {
+       "alertname": 0,
+       "alertstate": 1,
+       "severity": 2
+      }
+     }
+    }
+   ],
+   "id": 8
+  },
+  {
+   "type": "row",
+   "title": "Pipeline",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 10,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [],
+   "id": 9
+  },
+  {
+   "type": "table",
+   "title": "Flows",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 11,
+    "w": 12,
+    "h": 6
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - pricefc_flow_last_success_timestamp_seconds{env=\"$env\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_flow_last_success_duration_seconds{env=\"$env\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "B",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_flow_runs_scheduled{env=\"$env\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "C",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "since last success"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "duration"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {},
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "env": true,
+       "host": true,
+       "instance": true,
+       "job": true
+      },
+      "renameByName": {
+       "Value #A": "since last success",
+       "Value #B": "duration",
+       "Value #C": "scheduled 48 h"
+      }
+     }
+    }
+   ],
+   "id": 10
+  },
+  {
+   "type": "table",
+   "title": "Raw data freshness",
+   "description": "Per source: age of the oldest key's last valid pull, and whether every newest pull validated.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 11,
+    "w": 12,
+    "h": 6
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (source, dataset) (time() - pricefc_raw_latest_valid_pulled_at_timestamp_seconds{env=\"$env\"})",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "min by (source, dataset) (pricefc_raw_latest_pull_valid{env=\"$env\"})",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "B",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "last valid pull (oldest key)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "newest pulls valid"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "bool_yes_no"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {},
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "Value #A": "last valid pull (oldest key)",
+       "Value #B": "newest pulls valid"
+      }
+     }
+    }
+   ],
+   "id": 11
+  },
+  {
+   "type": "state-timeline",
+   "title": "Flow run state",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 24,
+    "h": 5
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (flow, state) (pricefc_flow_last_run_state{env=\"$env\"}) == 1",
+     "legendFormat": "{{flow}} {{state}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {
+    "showValue": "never",
+    "mergeValues": true
+   },
+   "id": 12
+  },
+  {
+   "type": "row",
+   "title": "Hosts and containers",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 22,
+    "w": 24,
+    "h": 1
+   },
+   "panels": [],
+   "id": 13
+  },
+  {
+   "type": "timeseries",
+   "title": "Container memory (main VPS)",
+   "description": "Worker peaks during forecast-daily (both models): ~3 GB on 2026-10-07.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 23,
+    "w": 12,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_container_memory_bytes{env=\"$env\"}",
+     "legendFormat": "{{name}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes"
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    },
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "max"
+     ]
+    }
+   },
+   "id": 14
+  },
+  {
+   "type": "timeseries",
+   "title": "Memory available",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 23,
+    "w": 6,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+     "legendFormat": "{{host}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {},
+   "id": 15
+  },
+  {
+   "type": "timeseries",
+   "title": "Disk free (/)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 23,
+    "w": 6,
+    "h": 7
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}",
+     "legendFormat": "{{host}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {},
+   "id": 16
+  },
+  {
+   "type": "timeseries",
+   "title": "CPU busy",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 30,
+    "w": 12,
+    "h": 6
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "1 - avg by (host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))",
+     "legendFormat": "{{host}}",
+     "instant": false,
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {},
+   "id": 17
+  },
+  {
+   "type": "table",
+   "title": "Containers",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 30,
+    "w": 12,
+    "h": 6
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_container_running{env=\"$env\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "A",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_container_healthy{env=\"$env\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "B",
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "pricefc_container_restarts{env=\"$env\"}",
+     "legendFormat": "__auto",
+     "instant": true,
+     "range": false,
+     "refId": "C",
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {},
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "env": true,
+       "host": true,
+       "instance": true,
+       "job": true
+      },
+      "renameByName": {
+       "Value #A": "running",
+       "Value #B": "healthy",
+       "Value #C": "restarts"
+      }
+     }
+    }
+   ],
+   "id": 18
+  }
+ ]
+}

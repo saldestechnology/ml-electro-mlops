@@ -1,0 +1,33 @@
+# Alertmanager on the backup VPS: Telegram group "FC Mon" only. The bot token is read from a
+# mode-600 file at send time (never in this repo, never on a command line).
+route:
+  receiver: telegram
+  group_by: [alertname, env, zone, host]
+  group_wait: 1m
+  group_interval: 10m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="none"]
+      receiver: blackhole
+    - matchers: [severity="warning"]
+      receiver: telegram
+      repeat_interval: 24h
+
+inhibit_rules:
+  # A down tunnel/host explains every missing metric behind it.
+  - source_matchers: [alertname="TargetDown", job="pricefc"]
+    target_matchers: [severity=~"warning|critical"]
+    equal: [host]
+
+receivers:
+  - name: blackhole
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /home/pricefc-backup/.config/pricefc-monitoring/telegram_bot_token
+        chat_id: -5115207699
+        parse_mode: ""
+        send_resolved: true
+        message: |-
+          {{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }}) {{ .Status }}
+          {{ range .Alerts }}• {{ .Annotations.summary }}
+          {{ end }}
